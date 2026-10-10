@@ -5,14 +5,14 @@ import { createClouds, createSun } from './sky.js';
 
 const canvas = document.getElementById('game');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.2));
 renderer.setSize(innerWidth, innerHeight);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 50, 100);
+scene.fog = new THREE.Fog(0x87ceeb, 30, 70);
 
-const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 600);
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 400);
 camera.rotation.order = 'YXZ';
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.85));
@@ -28,7 +28,6 @@ const blockMat = new THREE.MeshLambertMaterial({
   vertexColors: true,
 });
 
-// Air: transparan, tidak menulis depth, render setelah opaque
 const waterMat = new THREE.MeshLambertMaterial({
   map: atlasTex,
   transparent: true,
@@ -40,7 +39,7 @@ const waterMat = new THREE.MeshLambertMaterial({
 
 const world = new World(12345);
 const chunkMeshes = new Map();
-const RENDER_DISTANCE = 3;
+const RENDER_DISTANCE = 2; // ← turun dari 3
 
 const FACES = [
   {
@@ -150,8 +149,23 @@ function buildChunkMesh(cx, cz) {
   const opaque = { pos: [], norm: [], uv: [], color: [], idx: [], count: 0 };
   const water  = { pos: [], norm: [], uv: [], color: [], idx: [], count: 0 };
 
+  // Cari y maksimum yang ada blok, batasi loop
+  let maxY = 0;
   for (let x = 0; x < 16; x++) {
-    for (let y = 0; y < CHUNK_H; y++) {
+    for (let z = 0; z < 16; z++) {
+      for (let y = CHUNK_H - 1; y >= 0; y--) {
+        if (chunk.get(x, y, z) !== 0) {
+          if (y > maxY) maxY = y;
+          break;
+        }
+      }
+    }
+  }
+  // Tambah 1 untuk safety
+  maxY = Math.min(CHUNK_H, maxY + 2);
+
+  for (let x = 0; x < 16; x++) {
+    for (let y = 0; y <= maxY; y++) {
       for (let z = 0; z < 16; z++) {
         const b = chunk.get(x, y, z);
         if (b === BLOCK.AIR) continue;
@@ -206,7 +220,7 @@ function buildChunkMesh(cx, cz) {
     geo.setAttribute('color', new THREE.Float32BufferAttribute(opaque.color, 3));
     geo.setIndex(opaque.idx);
     const mesh = new THREE.Mesh(geo, blockMat);
-    mesh.renderOrder = 1;
+    mesh.frustumCulled = true;
     group.add(mesh);
   }
 
@@ -235,21 +249,53 @@ function unloadChunkMesh(cx, cz) {
   chunkMeshes.delete(key);
 }
 
-function updateChunks(px, pz) {
+// ==== CHUNK QUEUE ====
+// Jangan build semua chunk sekaligus. Antri, maksimal N per frame.
+let lastPlayerChunkX = null;
+let lastPlayerChunkZ = null;
+const buildQueue = [];
+
+function queueChunksAround(px, pz) {
   const pcx = Math.floor(px / 16);
   const pcz = Math.floor(pz / 16);
 
+  if (pcx === lastPlayerChunkX && pcz === lastPlayerChunkZ && buildQueue.length === 0) {
+    return; // tidak berubah, skip
+  }
+  lastPlayerChunkX = pcx;
+  lastPlayerChunkZ = pcz;
+
+  // Kumpulkan chunk yang perlu di-build (belum ada di chunkMeshes)
+  const needed = [];
   for (let dx = -RENDER_DISTANCE; dx <= RENDER_DISTANCE; dx++) {
     for (let dz = -RENDER_DISTANCE; dz <= RENDER_DISTANCE; dz++) {
-      buildChunkMesh(pcx + dx, pcz + dz);
+      const cx = pcx + dx;
+      const cz = pcz + dz;
+      const key = `${cx},${cz}`;
+      if (!chunkMeshes.has(key)) needed.push({ cx, cz, dist: dx*dx + dz*dz });
     }
   }
 
+  // Urutkan dari yang paling dekat
+  needed.sort((a, b) => a.dist - b.dist);
+
+  // Masukkan ke queue
+  buildQueue.length = 0;
+  for (const n of needed) buildQueue.push(n);
+
+  // Unload chunk yang jauh
   for (const key of [...chunkMeshes.keys()]) {
     const [cx, cz] = key.split(',').map(Number);
     if (Math.abs(cx - pcx) > RENDER_DISTANCE + 1 || Math.abs(cz - pcz) > RENDER_DISTANCE + 1) {
       unloadChunkMesh(cx, cz);
     }
+  }
+}
+
+function processBuildQueue(maxPerFrame = 1) {
+  for (let i = 0; i < maxPerFrame && buildQueue.length > 0; i++) {
+    const { cx, cz } = buildQueue.shift();
+    buildChunkMesh(cx, cz);
   }
 }
 
@@ -328,7 +374,6 @@ const joyBase = document.getElementById('joyBase');
 const joyKnob = document.getElementById('joyKnob');
 const jumpBtn = document.getElementById('jumpBtn');
 
-// Hotbar
 let selectedBlock = BLOCK.GRASS;
 const slotEls = document.querySelectorAll('.slot');
 const blockBySlot = {
@@ -353,7 +398,6 @@ function inRect(t, el) {
 
 canvas.addEventListener('touchstart', e => {
   for (const t of e.changedTouches) {
-    // Hotbar?
     let handled = false;
     slotEls.forEach(el => {
       if (inRect(t, el)) {
@@ -383,7 +427,6 @@ canvas.addEventListener('touchstart', e => {
       continue;
     }
 
-    // Area kosong = look + tap untuk interaksi
     if (touch.lookId === null) {
       touch.lookId = t.identifier;
       touch.lookLast = { x: t.clientX, y: t.clientY };
@@ -426,7 +469,6 @@ canvas.addEventListener('touchend', e => {
       joyKnob.style.top = '50%';
     }
     if (t.identifier === touch.lookId) {
-      // Cek apakah ini tap (bukan swipe)
       const dur = performance.now() - touch.tapStartTime;
       if (!touch.tapMoved && dur < 400 && t.identifier === touch.tapId) {
         handleTap();
@@ -444,7 +486,6 @@ canvas.addEventListener('touchend', e => {
 function handleTap() {
   const hit = raycastBlock(6);
   if (!hit) return;
-  // Tap = hancurkan blok
   world.setBlockGlobal(hit.x, hit.y, hit.z, BLOCK.AIR);
 }
 
@@ -461,13 +502,13 @@ function updateInfo() {
 }
 
 // ==== UPDATE ====
-let lastRebuildCheck = 0;
-function rebuildDirtyChunks() {
+function rebuildDirtyChunks(maxPerFrame = 2) {
   const dirty = world.consumeDirty();
-  for (const key of dirty) {
-    const [cx, cz] = key.split(',').map(Number);
+  for (let i = 0; i < Math.min(maxPerFrame, dirty.length); i++) {
+    const [cx, cz] = dirty[i].split(',').map(Number);
     buildChunkMesh(cx, cz);
   }
+  // Sisanya dibuang (jarang terjadi)
 }
 
 function updatePlayer() {
@@ -504,14 +545,17 @@ function updatePlayer() {
   camera.rotation.y = yaw;
   camera.rotation.x = pitch;
 
-  updateChunks(player.x, player.z);
-  rebuildDirtyChunks();
+  queueChunksAround(player.x, player.z);
+  processBuildQueue(1); // ← 1 chunk per frame
+  rebuildDirtyChunks(1);
 
   infoTimer++;
   if (infoTimer % 10 === 0) updateInfo();
 }
 
-updateChunks(player.x, player.z);
+queueChunksAround(player.x, player.z);
+// Build awal 5 chunk biar tidak kosong
+for (let i = 0; i < 5; i++) processBuildQueue(1);
 updateHotbarSelection();
 
 function animate() {
