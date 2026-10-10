@@ -24,7 +24,6 @@ export function getTintForBlock(blockType) {
   return BLOCK_TINT[blockType] || [1, 1, 1];
 }
 
-// ==== TEXTURE LOADER ====
 const textureCache = new Map();
 const materialCache = new Map();
 let loadedCount = 0;
@@ -43,13 +42,12 @@ export function getLoadProgress() {
   return { loaded: loadedCount, total: totalCount };
 }
 
-// Load semua texture dulu, return Promise yang resolve kalau semua selesai
 export function loadAllTextures() {
   const loader = new THREE.TextureLoader();
   const promises = [];
 
   for (const filename of ALL_FILES) {
-    const p = new Promise((resolve, reject) => {
+    const p = new Promise((resolve) => {
       loader.load(
         './textures/' + filename,
         (tex) => {
@@ -59,6 +57,7 @@ export function loadAllTextures() {
           tex.colorSpace = THREE.SRGBColorSpace;
           tex.wrapS = THREE.ClampToEdgeWrapping;
           tex.wrapT = THREE.ClampToEdgeWrapping;
+          tex.flipY = false;   // ← KUNCI UTAMA
           textureCache.set(filename, tex);
           loadedCount++;
           resolve();
@@ -67,7 +66,7 @@ export function loadAllTextures() {
         (err) => {
           console.error('Gagal load texture:', filename, err);
           loadedCount++;
-          resolve(); // tetap resolve biar tidak hang
+          resolve();
         }
       );
     });
@@ -77,19 +76,16 @@ export function loadAllTextures() {
   return Promise.all(promises);
 }
 
-// Material: HARUS ada vertexColors: true
 export function getMaterial(filename, transparent) {
   const key = filename + (transparent ? '_t' : '');
   if (materialCache.has(key)) return materialCache.get(key);
 
   const tex = textureCache.get(filename);
   if (!tex) {
-    // Fallback kalau tekstur belum siap — warna pink debug
-    const mat = new THREE.MeshLambertMaterial({
+    return new THREE.MeshLambertMaterial({
       color: 0xff00ff,
       vertexColors: true,
     });
-    return mat;
   }
 
   const mat = new THREE.MeshLambertMaterial({
@@ -97,7 +93,7 @@ export function getMaterial(filename, transparent) {
     side: THREE.FrontSide,
     transparent: !!transparent,
     alphaTest: transparent ? 0 : 0.5,
-    vertexColors: true,   // ← KUNCI
+    vertexColors: true,
   });
   if (transparent) mat.opacity = 0.7;
   materialCache.set(key, mat);
