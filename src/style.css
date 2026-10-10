@@ -83,11 +83,12 @@ canvas {
   align-items: center;
   justify-content: center;
   position: relative;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .slot.selected {
   border-color: #ffd54f;
-  box-shadow: 0 0 8px #ffd54f;
+  box-shadow: 0 0 10px #ffd54f, inset 0 0 6px rgba(255, 213, 79, 0.3);
 }
 
 .slot .color {
@@ -144,7 +145,7 @@ canvas {
 #crosshair::after {
   content: '';
   position: absolute;
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 0 2px black;
 }
 
