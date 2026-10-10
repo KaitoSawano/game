@@ -1,0 +1,6 @@
+{
+  "appId": "com.yourname.openworld",
+  "appName": "OpenWorld",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
