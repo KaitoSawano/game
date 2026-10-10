@@ -71,30 +71,30 @@ export class World {
   }
 
   heightAt(gx, gz) {
-    const sx = (gx + this.seed) * 0.008;
-    const sz = (gz + this.seed) * 0.008;
+    const sx = (gx + this.seed) * 0.01;
+    const sz = (gz + this.seed) * 0.01;
     const base = fbm(sx, sz, 3);
-    const mountain = fbm(sx * 0.4 + 50, sz * 0.4 + 50, 2);
+    const mountain = fbm(sx * 0.25 + 100, sz * 0.25 + 100, 2);
 
-    let h = 10 + base * 8;
-    if (mountain > 0.7) {
-      h += (mountain - 0.7) * 50;
+    let h = 11 + base * 6;
+    if (mountain > 0.75) {
+      h += (mountain - 0.75) * 60;
     }
     return Math.floor(h);
   }
 
   biomeAt(gx, gz) {
-    const temp = fbm((gx + this.seed) * 0.003, (gz + this.seed) * 0.003, 2);
-    const humid = fbm((gx + this.seed * 2) * 0.004, (gz + this.seed * 2) * 0.004, 2);
+    const temp = fbm((gx + this.seed) * 0.004, (gz + this.seed) * 0.004, 2);
+    const humid = fbm((gx + this.seed * 2) * 0.005, (gz + this.seed * 2) * 0.005, 2);
     const h = this.heightAt(gx, gz);
 
-    if (h < 9) return BIOME.OCEAN;
-    if (h < 10) return BIOME.BEACH;
-    if (h > 30) return BIOME.MOUNTAIN;
+    if (h < 10) return BIOME.OCEAN;
+    if (h < 11) return BIOME.BEACH;
+    if (h > 28) return BIOME.MOUNTAIN;
 
-    if (temp < 0.35) return BIOME.SNOW;
-    if (temp > 0.65 && humid < 0.4) return BIOME.DESERT;
-    if (humid > 0.55) return BIOME.FOREST;
+    if (temp < 0.3) return BIOME.SNOW;
+    if (temp > 0.7 && humid < 0.35) return BIOME.DESERT;
+    if (humid > 0.6) return BIOME.FOREST;
     return BIOME.PLAINS;
   }
 
@@ -118,7 +118,7 @@ export class World {
             surface = BLOCK.SAND; subsurface = BLOCK.SAND; deep = BLOCK.STONE;
             break;
           case BIOME.MOUNTAIN:
-            surface = h > 38 ? BLOCK.SNOW : BLOCK.STONE;
+            surface = h > 32 ? BLOCK.SNOW : BLOCK.STONE;
             subsurface = BLOCK.STONE; deep = BLOCK.STONE;
             break;
           case BIOME.OCEAN:
@@ -136,9 +136,9 @@ export class World {
           chunk.set(x, y, z, block);
         }
 
-        if (h < 9) {
-          for (let y = h + 1; y <= 8; y++) {
-            if (y === 8 && biome === BIOME.SNOW) chunk.set(x, y, z, BLOCK.ICE);
+        if (h < 10) {
+          for (let y = h + 1; y <= 9; y++) {
+            if (y === 9 && biome === BIOME.SNOW) chunk.set(x, y, z, BLOCK.ICE);
             else chunk.set(x, y, z, BLOCK.WATER);
           }
         }
@@ -151,18 +151,18 @@ export class World {
         const gz = cz * 16 + z;
         const h = this.heightAt(gx, gz);
         const biome = this.biomeAt(gx, gz);
-        if (h < 10 || h > 30) continue;
+        if (h < 11 || h > 28) continue;
 
         const r = hash(gx * 7, gz * 13);
 
         if (biome === BIOME.FOREST) {
-          if (r > 0.92) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
+          if (r > 0.90) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
         } else if (biome === BIOME.PLAINS) {
-          if (r > 0.985) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
+          if (r > 0.97) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
         } else if (biome === BIOME.DESERT) {
-          if (r > 0.97) this.placeCactus(chunk, x, h + 1, z);
+          if (r > 0.96) this.placeCactus(chunk, x, h + 1, z);
         } else if (biome === BIOME.SNOW) {
-          if (r > 0.96) this.placeTree(chunk, x, h + 1, z, BLOCK.BIRCH_WOOD, BLOCK.BIRCH_LEAVES);
+          if (r > 0.94) this.placeTree(chunk, x, h + 1, z, BLOCK.BIRCH_WOOD, BLOCK.BIRCH_LEAVES);
         }
       }
     }
