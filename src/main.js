@@ -59,7 +59,6 @@ function buildChunkMesh(cx, cz) {
 
   const chunk = world.getChunk(cx, cz);
   const bx = cx * 16, bz = cz * 16;
-
   const buffers = {};
 
   for (let x = 0; x < 16; x++) {
@@ -76,7 +75,6 @@ function buildChunkMesh(cx, cz) {
           const ny = y + face.dir[1];
           const nz = bz + z + face.dir[2];
           const nb = world.getBlockGlobal(nx, ny, nz);
-
           if (!isTransparent(nb)) continue;
 
           for (const c of face.corners) {
@@ -133,76 +131,6 @@ function updateChunks(px, pz) {
   }
 }
 
-// ==== KONTROL ====
-const touch = {
-  moveId: null, lookId: null,
-  moveStart: { x: 0, y: 0 }, moveCur: { x: 0, y: 0 },
-  lookLast: { x: 0, y: 0 },
-  lookStartTime: 0, lookMoved: false,
-};
-let yaw = 0, pitch = 0;
-
-const joyBase = document.getElementById('joyBase');
-const joyKnob = document.getElementById('joyKnob');
-
-canvas.addEventListener('touchstart', e => {
-  for (const t of e.changedTouches) {
-    if (t.clientX < innerWidth / 2 && touch.moveId === null) {
-      touch.moveId = t.identifier;
-      touch.moveStart = { x: t.clientX, y: t.clientY };
-      touch.moveCur = { x: t.clientX, y: t.clientY };
-
-      // Tampilkan joystick di lokasi sentuh
-      joyBase.style.left = (t.clientX - 70) + 'px';
-      joyBase.style.top = (t.clientY - 70) + 'px';
-      joyBase.style.display = 'block';
-      joyKnob.style.left = '50%';
-      joyKnob.style.top = '50%';
-    } else if (t.clientX >= innerWidth / 2 && touch.lookId === null) {
-      touch.lookId = t.identifier;
-      touch.lookLast = { x: t.clientX, y: t.clientY };
-      touch.lookStartTime = performance.now();
-      touch.lookMoved = false;
-    }
-  }
-}, { passive: false });
-
-canvas.addEventListener('touchmove', e => {
-  for (const t of e.changedTouches) {
-    if (t.identifier === touch.moveId) {
-      touch.moveCur = { x: t.clientX, y: t.clientY };
-
-      const dx = touch.moveCur.x - touch.moveStart.x;
-      const dy = touch.moveCur.y - touch.moveStart.y;
-      const max = 50;
-      const len = Math.min(Math.hypot(dx, dy), max);
-      const ang = Math.atan2(dy, dx);
-      joyKnob.style.left = (50 + Math.cos(ang) * len * 0.7) + '%';
-      joyKnob.style.top = (50 + Math.sin(ang) * len * 0.7) + '%';
-    } else if (t.identifier === touch.lookId) {
-      const dx = t.clientX - touch.lookLast.x;
-      const dy = t.clientY - touch.lookLast.y;
-      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) touch.lookMoved = true;
-      yaw -= dx * 0.005;
-      pitch -= dy * 0.005;
-      pitch = Math.max(-1.5, Math.min(1.5, pitch));
-      touch.lookLast = { x: t.clientX, y: t.clientY };
-    }
-  }
-}, { passive: false });
-
-canvas.addEventListener('touchend', e => {
-  for (const t of e.changedTouches) {
-    if (t.identifier === touch.moveId) {
-      touch.moveId = null;
-      joyBase.style.display = 'none';
-    }
-    if (t.identifier === touch.lookId) {
-      touch.lookId = null;
-    }
-  }
-}, { passive: false });
-
 // ==== PLAYER ====
 function findSpawn() {
   for (let r = 0; r < 400; r++) {
@@ -220,7 +148,8 @@ const spawn = findSpawn();
 const player = { x: spawn.x, y: spawn.y, z: spawn.z, vy: 0, onGround: false };
 
 const SPEED = 0.15;
-const GRAVITY = 0.015;
+const GRAVITY = 0.018;
+const JUMP_V = 0.35;
 const EYE = 1.6;
 const PLAYER_RADIUS = 0.3;
 
@@ -229,7 +158,6 @@ function isSolidAt(gx, gy, gz) {
   return b !== BLOCK.AIR && b !== BLOCK.WATER;
 }
 
-// Cek apakah player di posisi (x,z) menabrak blok solid
 function collidesAt(x, z) {
   const feetY = Math.floor(player.y - EYE);
   const headY = Math.floor(player.y - 0.1);
@@ -242,8 +170,105 @@ function collidesAt(x, z) {
   return false;
 }
 
+// ==== INPUT ====
+const touch = {
+  moveId: null, lookId: null, jumpId: null,
+  moveStart: { x: 0, y: 0 }, moveCur: { x: 0, y: 0 },
+  lookLast: { x: 0, y: 0 },
+};
+let yaw = 0, pitch = 0;
+
+const joyBase = document.getElementById('joyBase');
+const joyKnob = document.getElementById('joyKnob');
+const jumpBtn = document.getElementById('jumpBtn');
+
+function inRect(t, el) {
+  const r = el.getBoundingClientRect();
+  return t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom;
+}
+
+canvas.addEventListener('touchstart', e => {
+  for (const t of e.changedTouches) {
+    // Tombol lompat?
+    if (inRect(t, jumpBtn) && touch.jumpId === null) {
+      touch.jumpId = t.identifier;
+      jumpBtn.classList.add('active');
+      if (player.onGround) player.vy = JUMP_V;
+      continue;
+    }
+
+    // Joystick area (kiri bawah, di sekitar joyBase)?
+    const jr = joyBase.getBoundingClientRect();
+    const jcx = jr.left + jr.width / 2;
+    const jcy = jr.top + jr.height / 2;
+    const dist = Math.hypot(t.clientX - jcx, t.clientY - jcy);
+    if (dist < 120 && touch.moveId === null) {
+      touch.moveId = t.identifier;
+      touch.moveStart = { x: jcx, y: jcy };
+      touch.moveCur = { x: t.clientX, y: t.clientY };
+      continue;
+    }
+
+    // Sisanya = area look (swipe kanan / area kosong)
+    if (touch.lookId === null) {
+      touch.lookId = t.identifier;
+      touch.lookLast = { x: t.clientX, y: t.clientY };
+    }
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === touch.moveId) {
+      touch.moveCur = { x: t.clientX, y: t.clientY };
+
+      const dx = touch.moveCur.x - touch.moveStart.x;
+      const dy = touch.moveCur.y - touch.moveStart.y;
+      const max = 50;
+      const len = Math.min(Math.hypot(dx, dy), max);
+      const ang = Math.atan2(dy, dx);
+      joyKnob.style.left = (50 + Math.cos(ang) * (len / 130) * 100) + '%';
+      joyKnob.style.top = (50 + Math.sin(ang) * (len / 130) * 100) + '%';
+    } else if (t.identifier === touch.lookId) {
+      const dx = t.clientX - touch.lookLast.x;
+      const dy = t.clientY - touch.lookLast.y;
+      yaw -= dx * 0.005;
+      pitch -= dy * 0.005;
+      pitch = Math.max(-1.5, Math.min(1.5, pitch));
+      touch.lookLast = { x: t.clientX, y: t.clientY };
+    }
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === touch.moveId) {
+      touch.moveId = null;
+      joyKnob.style.left = '50%';
+      joyKnob.style.top = '50%';
+    }
+    if (t.identifier === touch.lookId) touch.lookId = null;
+    if (t.identifier === touch.jumpId) {
+      touch.jumpId = null;
+      jumpBtn.classList.remove('active');
+    }
+  }
+}, { passive: false });
+
+// ==== INFO PANEL ====
+const infoX = document.getElementById('infoX');
+const infoY = document.getElementById('infoY');
+const infoZ = document.getElementById('infoZ');
+let infoTimer = 0;
+
+function updateInfo() {
+  infoX.textContent = player.x.toFixed(0);
+  infoY.textContent = player.y.toFixed(1);
+  infoZ.textContent = player.z.toFixed(0);
+}
+
+// ==== UPDATE ====
 function updatePlayer() {
-  // Horizontal
   if (touch.moveId !== null) {
     const dx = touch.moveCur.x - touch.moveStart.x;
     const dy = touch.moveCur.y - touch.moveStart.y;
@@ -254,17 +279,14 @@ function updatePlayer() {
     const nx = player.x + (-sin * forward + cos * strafe) * SPEED;
     const nz = player.z + (-cos * forward - sin * strafe) * SPEED;
 
-    // Cek collision horizontal
     if (!collidesAt(nx, player.z)) player.x = nx;
     if (!collidesAt(player.x, nz)) player.z = nz;
   }
 
-  // Gravity
   player.vy -= GRAVITY;
-  player.vy = Math.max(player.vy, -0.5);
+  player.vy = Math.max(player.vy, -0.6);
   player.y += player.vy;
 
-  // Collision vertikal
   const feetY = Math.floor(player.y - EYE);
   if (isSolidAt(player.x, feetY, player.z)) {
     player.y = feetY + 1 + EYE;
@@ -284,6 +306,9 @@ function updatePlayer() {
   camera.rotation.x = pitch;
 
   updateChunks(player.x, player.z);
+
+  infoTimer++;
+  if (infoTimer % 10 === 0) updateInfo();
 }
 
 updateChunks(player.x, player.z);
