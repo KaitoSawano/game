@@ -1,8 +1,9 @@
 export class Chunk {
   constructor(cx, cz) {
-    this.cx = cx; this.cz = cz;
+    this.cx = cx;
+    this.cz = cz;
     this.size = 16;
-    this.data = new Uint8Array(16 * 16 * 16); // 0 = udara, 1 = blok
+    this.data = new Uint8Array(16 * 16 * 16);
     this.mesh = null;
   }
 
