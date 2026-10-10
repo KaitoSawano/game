@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+  <title>My Game</title>
+  <style>
+    body { margin: 0; background: #111; overflow: hidden; touch-action: none; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    function resize() {
+      canvas.width = innerWidth;
+      canvas.height = innerHeight;
+    }
+    addEventListener('resize', resize);
+    resize();
+
+    // Kotak sederhana yang mengikuti sentuhan — gerakan game paling dasar
+    let x = innerWidth / 2, y = innerHeight / 2;
+    let tx = x, ty = y;
+
+    canvas.addEventListener('touchmove', e => {
+      const t = e.touches[0];
+      tx = t.clientX;
+      ty = t.clientY;
+    }, { passive: false });
+
+    function loop() {
+      x += (tx - x) * 0.1;
+      y += (ty - y) * 0.1;
+
+      ctx.fillStyle = '#111';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.beginPath();
+      ctx.arc(x, y, 30, 0, Math.PI * 2);
+      ctx.fillStyle = '#0cf';
+      ctx.fill();
+
+      requestAnimationFrame(loop);
+    }
+    loop();
+  </script>
+</body>
+</html>
