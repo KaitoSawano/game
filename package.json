@@ -1,0 +1,11 @@
+{
+  "name": "my-game",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "echo \"no build step\"",
+    "apk": "nitron build"
+  },
+  "devDependencies": {
+    "nitron": "latest"
+  }
+}
