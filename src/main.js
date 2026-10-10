@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { World, BLOCK, BIOME, CHUNK_H, SEA_LEVEL } from './world.js';
-import { BLOCK_TEXTURES, getMaterial, getTintForBlock, loadAllTextures, getLoadProgress } from './textures.js';
+import { BLOCK_TEXTURES, getMaterial, getWaterMaterial, getTintForBlock, loadAllTextures } from './textures.js';
 import { createClouds, createSun } from './sky.js';
 
 const canvas = document.getElementById('game');
@@ -81,7 +81,7 @@ function computeAO(gx, gy, gz, face, vi) {
 
 function getTextureFile(blockType, faceDir) {
   const t = BLOCK_TEXTURES[blockType];
-  if (!t) return 'rock.png';
+  if (!t || !t.top) return null;
   if (faceDir[1] === 1) return t.top;
   if (faceDir[1] === -1) return t.bottom;
   return t.side;
@@ -101,10 +101,10 @@ function buildChunkMesh(cx, cz) {
 
   const buffers = new Map();
 
-  function getBuf(filename, transparent) {
-    const bufKey = filename + (transparent ? '_t' : '');
+  function getBuf(filename, isWater) {
+    const bufKey = isWater ? '_water' : 'op_' + filename;
     if (!buffers.has(bufKey)) {
-      buffers.set(bufKey, { filename, transparent, pos: [], norm: [], uv: [], color: [], idx: [], count: 0 });
+      buffers.set(bufKey, { filename, isWater, pos: [], norm: [], uv: [], color: [], idx: [], count: 0 });
     }
     return buffers.get(bufKey);
   }
@@ -141,7 +141,7 @@ function buildChunkMesh(cx, cz) {
           if (!isTransparent(nb)) continue;
           if (isWater && face.dir[1] === -1) continue;
 
-          const filename = getTextureFile(b, face.dir);
+          const filename = isWater ? null : getTextureFile(b, face.dir);
           const buf = getBuf(filename, isWater);
 
           const cornerUVs = [
@@ -177,9 +177,16 @@ function buildChunkMesh(cx, cz) {
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(buf.uv, 2));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(buf.color, 3));
     geo.setIndex(buf.idx);
-    const mat = getMaterial(buf.filename, buf.transparent);
+
+    let mat;
+    if (buf.isWater) {
+      mat = getWaterMaterial();
+    } else {
+      mat = getMaterial(buf.filename);
+    }
+
     const mesh = new THREE.Mesh(geo, mat);
-    if (buf.transparent) mesh.renderOrder = 2;
+    if (buf.isWater) mesh.renderOrder = 2;
     group.add(mesh);
   }
 
@@ -511,7 +518,6 @@ function hideLoading() {
   if (box) box.style.display = 'none';
 }
 
-// ==== START ====
 showLoading();
 loadAllTextures().then(() => {
   hideLoading();
