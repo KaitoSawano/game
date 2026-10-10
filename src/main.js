@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { World, BLOCK, BIOME, CHUNK_H } from './world.js';
+import { World, BLOCK, BIOME, CHUNK_H, SEA_LEVEL } from './world.js';
 import { generateAtlas, BLOCK_TILES, TILE_SIZE, ATLAS_COLS } from './textures.js';
 import { createClouds, createSun } from './sky.js';
 
@@ -31,77 +31,53 @@ const blockMat = new THREE.MeshLambertMaterial({
 const waterMat = new THREE.MeshLambertMaterial({
   map: atlasTex,
   transparent: true,
-  opacity: 0.65,
-  side: THREE.DoubleSide,
+  opacity: 0.55,
+  side: THREE.FrontSide,
   vertexColors: true,
   depthWrite: false,
 });
 
 const world = new World(12345);
 const chunkMeshes = new Map();
-const RENDER_DISTANCE = 2; // ← turun dari 3
+const RENDER_DISTANCE = 2;
 
 const FACES = [
-  {
-    dir: [1, 0, 0],
-    corners: [[1,0,0],[1,0,1],[1,1,1],[1,1,0]],
-    ao: [
-      { side1: [1,-1,0], side2: [1,0,-1], corner: [1,-1,-1] },
-      { side1: [1,-1,0], side2: [1,0,1],  corner: [1,-1,1]  },
-      { side1: [1,1,0],  side2: [1,0,1],  corner: [1,1,1]   },
-      { side1: [1,1,0],  side2: [1,0,-1], corner: [1,1,-1]  },
-    ],
-  },
-  {
-    dir: [-1, 0, 0],
-    corners: [[0,0,1],[0,0,0],[0,1,0],[0,1,1]],
-    ao: [
-      { side1: [-1,-1,0], side2: [-1,0,1],  corner: [-1,-1,1]  },
-      { side1: [-1,-1,0], side2: [-1,0,-1], corner: [-1,-1,-1] },
-      { side1: [-1,1,0],  side2: [-1,0,-1], corner: [-1,1,-1]  },
-      { side1: [-1,1,0],  side2: [-1,0,1],  corner: [-1,1,1]   },
-    ],
-  },
-  {
-    dir: [0, 1, 0],
-    corners: [[0,1,1],[1,1,1],[1,1,0],[0,1,0]],
-    ao: [
-      { side1: [-1,1,1], side2: [0,1,1], corner: [-1,1,1] },
-      { side1: [1,1,1],  side2: [0,1,1], corner: [1,1,1]  },
-      { side1: [1,1,-1], side2: [0,1,-1], corner: [1,1,-1] },
-      { side1: [-1,1,-1], side2: [0,1,-1], corner: [-1,1,-1] },
-    ],
-  },
-  {
-    dir: [0, -1, 0],
-    corners: [[0,0,0],[1,0,0],[1,0,1],[0,0,1]],
-    ao: [
-      { side1: [-1,-1,0], side2: [0,-1,-1], corner: [-1,-1,-1] },
-      { side1: [1,-1,0],  side2: [0,-1,-1], corner: [1,-1,-1]  },
-      { side1: [1,-1,0],  side2: [0,-1,1],  corner: [1,-1,1]   },
-      { side1: [-1,-1,0], side2: [0,-1,1],  corner: [-1,-1,1]  },
-    ],
-  },
-  {
-    dir: [0, 0, 1],
-    corners: [[0,0,1],[1,0,1],[1,1,1],[0,1,1]],
-    ao: [
-      { side1: [-1,0,1], side2: [0,-1,1], corner: [-1,-1,1] },
-      { side1: [1,0,1],  side2: [0,-1,1], corner: [1,-1,1]  },
-      { side1: [1,0,1],  side2: [0,1,1],  corner: [1,1,1]   },
-      { side1: [-1,0,1], side2: [0,1,1],  corner: [-1,1,1]  },
-    ],
-  },
-  {
-    dir: [0, 0, -1],
-    corners: [[1,0,0],[0,0,0],[0,1,0],[1,1,0]],
-    ao: [
-      { side1: [1,0,-1],  side2: [0,-1,-1], corner: [1,-1,-1]  },
-      { side1: [-1,0,-1], side2: [0,-1,-1], corner: [-1,-1,-1] },
-      { side1: [-1,0,-1], side2: [0,1,-1],  corner: [-1,1,-1]  },
-      { side1: [1,0,-1],  side2: [0,1,-1],  corner: [1,1,-1]   },
-    ],
-  },
+  { dir: [1, 0, 0], corners: [[1,0,0],[1,0,1],[1,1,1],[1,1,0]], ao: [
+    { side1: [1,-1,0], side2: [1,0,-1], corner: [1,-1,-1] },
+    { side1: [1,-1,0], side2: [1,0,1],  corner: [1,-1,1]  },
+    { side1: [1,1,0],  side2: [1,0,1],  corner: [1,1,1]   },
+    { side1: [1,1,0],  side2: [1,0,-1], corner: [1,1,-1]  },
+  ]},
+  { dir: [-1, 0, 0], corners: [[0,0,1],[0,0,0],[0,1,0],[0,1,1]], ao: [
+    { side1: [-1,-1,0], side2: [-1,0,1],  corner: [-1,-1,1]  },
+    { side1: [-1,-1,0], side2: [-1,0,-1], corner: [-1,-1,-1] },
+    { side1: [-1,1,0],  side2: [-1,0,-1], corner: [-1,1,-1]  },
+    { side1: [-1,1,0],  side2: [-1,0,1],  corner: [-1,1,1]   },
+  ]},
+  { dir: [0, 1, 0], corners: [[0,1,1],[1,1,1],[1,1,0],[0,1,0]], ao: [
+    { side1: [-1,1,1], side2: [0,1,1], corner: [-1,1,1] },
+    { side1: [1,1,1],  side2: [0,1,1], corner: [1,1,1]  },
+    { side1: [1,1,-1], side2: [0,1,-1], corner: [1,1,-1] },
+    { side1: [-1,1,-1], side2: [0,1,-1], corner: [-1,1,-1] },
+  ]},
+  { dir: [0, -1, 0], corners: [[0,0,0],[1,0,0],[1,0,1],[0,0,1]], ao: [
+    { side1: [-1,-1,0], side2: [0,-1,-1], corner: [-1,-1,-1] },
+    { side1: [1,-1,0],  side2: [0,-1,-1], corner: [1,-1,-1]  },
+    { side1: [1,-1,0],  side2: [0,-1,1],  corner: [1,-1,1]   },
+    { side1: [-1,-1,0], side2: [0,-1,1],  corner: [-1,-1,1]  },
+  ]},
+  { dir: [0, 0, 1], corners: [[0,0,1],[1,0,1],[1,1,1],[0,1,1]], ao: [
+    { side1: [-1,0,1], side2: [0,-1,1], corner: [-1,-1,1] },
+    { side1: [1,0,1],  side2: [0,-1,1], corner: [1,-1,1]  },
+    { side1: [1,0,1],  side2: [0,1,1],  corner: [1,1,1]   },
+    { side1: [-1,0,1], side2: [0,1,1],  corner: [-1,1,1]  },
+  ]},
+  { dir: [0, 0, -1], corners: [[1,0,0],[0,0,0],[0,1,0],[1,1,0]], ao: [
+    { side1: [1,0,-1],  side2: [0,-1,-1], corner: [1,-1,-1]  },
+    { side1: [-1,0,-1], side2: [0,-1,-1], corner: [-1,-1,-1] },
+    { side1: [-1,0,-1], side2: [0,1,-1],  corner: [-1,1,-1]  },
+    { side1: [1,0,-1],  side2: [0,1,-1],  corner: [1,1,-1]   },
+  ]},
 ];
 
 function isTransparent(b) {
@@ -128,7 +104,6 @@ function getTileUV(blockType, faceDir) {
   if (faceDir[1] === 1) tileIdx = t.top;
   else if (faceDir[1] === -1) tileIdx = t.bottom;
   else tileIdx = t.side;
-
   const u0 = tileIdx / ATLAS_COLS;
   const u1 = (tileIdx + 1) / ATLAS_COLS;
   return { u0, u1 };
@@ -149,7 +124,6 @@ function buildChunkMesh(cx, cz) {
   const opaque = { pos: [], norm: [], uv: [], color: [], idx: [], count: 0 };
   const water  = { pos: [], norm: [], uv: [], color: [], idx: [], count: 0 };
 
-  // Cari y maksimum yang ada blok, batasi loop
   let maxY = 0;
   for (let x = 0; x < 16; x++) {
     for (let z = 0; z < 16; z++) {
@@ -161,7 +135,6 @@ function buildChunkMesh(cx, cz) {
       }
     }
   }
-  // Tambah 1 untuk safety
   maxY = Math.min(CHUNK_H, maxY + 2);
 
   for (let x = 0; x < 16; x++) {
@@ -181,9 +154,9 @@ function buildChunkMesh(cx, cz) {
           const nb = world.getBlockGlobal(nx, ny, nz);
 
           if (!isTransparent(nb)) continue;
+          if (isWater && face.dir[1] === -1) continue;
 
           const { u0, u1 } = getTileUV(b, face.dir);
-
           const cornerUVs = [
             [u0, 0],
             [u1, 0],
@@ -195,13 +168,10 @@ function buildChunkMesh(cx, cz) {
             const c = face.corners[vi];
             buf.pos.push(bx + x + c[0], y + c[1], bz + z + c[2]);
             buf.norm.push(...face.dir);
-
             const ao = computeAO(bx + x, y, bz + z, face, vi);
             buf.color.push(ao, ao, ao);
-
             buf.uv.push(cornerUVs[vi][0], cornerUVs[vi][1]);
           }
-
           buf.idx.push(buf.count, buf.count + 1, buf.count + 2);
           buf.idx.push(buf.count, buf.count + 2, buf.count + 3);
           buf.count += 4;
@@ -220,7 +190,6 @@ function buildChunkMesh(cx, cz) {
     geo.setAttribute('color', new THREE.Float32BufferAttribute(opaque.color, 3));
     geo.setIndex(opaque.idx);
     const mesh = new THREE.Mesh(geo, blockMat);
-    mesh.frustumCulled = true;
     group.add(mesh);
   }
 
@@ -249,8 +218,6 @@ function unloadChunkMesh(cx, cz) {
   chunkMeshes.delete(key);
 }
 
-// ==== CHUNK QUEUE ====
-// Jangan build semua chunk sekaligus. Antri, maksimal N per frame.
 let lastPlayerChunkX = null;
 let lastPlayerChunkZ = null;
 const buildQueue = [];
@@ -258,32 +225,22 @@ const buildQueue = [];
 function queueChunksAround(px, pz) {
   const pcx = Math.floor(px / 16);
   const pcz = Math.floor(pz / 16);
-
-  if (pcx === lastPlayerChunkX && pcz === lastPlayerChunkZ && buildQueue.length === 0) {
-    return; // tidak berubah, skip
-  }
+  if (pcx === lastPlayerChunkX && pcz === lastPlayerChunkZ && buildQueue.length === 0) return;
   lastPlayerChunkX = pcx;
   lastPlayerChunkZ = pcz;
 
-  // Kumpulkan chunk yang perlu di-build (belum ada di chunkMeshes)
   const needed = [];
   for (let dx = -RENDER_DISTANCE; dx <= RENDER_DISTANCE; dx++) {
     for (let dz = -RENDER_DISTANCE; dz <= RENDER_DISTANCE; dz++) {
       const cx = pcx + dx;
       const cz = pcz + dz;
-      const key = `${cx},${cz}`;
-      if (!chunkMeshes.has(key)) needed.push({ cx, cz, dist: dx*dx + dz*dz });
+      if (!chunkMeshes.has(`${cx},${cz}`)) needed.push({ cx, cz, dist: dx*dx + dz*dz });
     }
   }
-
-  // Urutkan dari yang paling dekat
   needed.sort((a, b) => a.dist - b.dist);
-
-  // Masukkan ke queue
   buildQueue.length = 0;
   for (const n of needed) buildQueue.push(n);
 
-  // Unload chunk yang jauh
   for (const key of [...chunkMeshes.keys()]) {
     const [cx, cz] = key.split(',').map(Number);
     if (Math.abs(cx - pcx) > RENDER_DISTANCE + 1 || Math.abs(cz - pcz) > RENDER_DISTANCE + 1) {
@@ -292,7 +249,7 @@ function queueChunksAround(px, pz) {
   }
 }
 
-function processBuildQueue(maxPerFrame = 1) {
+function processBuildQueue(maxPerFrame = 2) {
   for (let i = 0; i < maxPerFrame && buildQueue.length > 0; i++) {
     const { cx, cz } = buildQueue.shift();
     buildChunkMesh(cx, cz);
@@ -303,14 +260,35 @@ const cloudMesh = createClouds(scene);
 const sunSprite = createSun(scene);
 
 function findSpawn() {
-  for (let r = 0; r < 2000; r++) {
-    const tx = 8 + (r % 100) - 50;
-    const tz = 8 + Math.floor(r / 100) - 5;
-    const h = world.heightAt(tx, tz);
-    const biome = world.biomeAt(tx, tz);
-    if (h >= 12 && h <= 16 && (biome === BIOME.PLAINS || biome === BIOME.FOREST)) {
-      return { x: tx + 0.5, y: h + 3, z: tz + 0.5 };
+  let best = null;
+  let bestScore = -Infinity;
+  for (let tx = -150; tx <= 150; tx += 8) {
+    for (let tz = -150; tz <= 150; tz += 8) {
+      const h = world.heightAt(tx, tz);
+      if (h < SEA_LEVEL + 4) continue;
+      const biome = world.biomeAt(tx, tz);
+      if (biome === BIOME.OCEAN || biome === BIOME.BEACH) continue;
+      let waterNear = 0;
+      for (let dx = -20; dx <= 20; dx += 8) {
+        for (let dz = -20; dz <= 20; dz += 8) {
+          const nh = world.heightAt(tx + dx, tz + dz);
+          if (nh < SEA_LEVEL) waterNear++;
+        }
+      }
+      const score = -waterNear + (h >= 14 && h <= 22 ? 5 : 0);
+      if (score > bestScore) {
+        bestScore = score;
+        best = { x: tx + 0.5, y: h + 3, z: tz + 0.5 };
+      }
     }
+  }
+  if (best) return best;
+
+  for (let r = 0; r < 5000; r++) {
+    const tx = (r % 200) - 100;
+    const tz = Math.floor(r / 200) - 12;
+    const h = world.heightAt(tx, tz);
+    if (h > SEA_LEVEL + 2) return { x: tx + 0.5, y: h + 3, z: tz + 0.5 };
   }
   return { x: 8, y: 30, z: 8 };
 }
@@ -341,11 +319,9 @@ function collidesAt(x, z) {
   return false;
 }
 
-// ==== RAYCAST ====
 function raycastBlock(maxDist = 6) {
   const origin = new THREE.Vector3(player.x, player.y, player.z);
   const dir = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation).normalize();
-
   const step = 0.05;
   let prev = null;
   for (let t = 0; t < maxDist; t += step) {
@@ -353,20 +329,17 @@ function raycastBlock(maxDist = 6) {
     const py = Math.floor(origin.y + dir.y * t);
     const pz = Math.floor(origin.z + dir.z * t);
     const b = world.getBlockGlobal(px, py, pz);
-    if (b !== BLOCK.AIR && b !== BLOCK.WATER) {
-      return { x: px, y: py, z: pz, prev };
-    }
+    if (b !== BLOCK.AIR && b !== BLOCK.WATER) return { x: px, y: py, z: pz, prev };
     prev = { x: px, y: py, z: pz };
   }
   return null;
 }
 
-// ==== INPUT ====
 const touch = {
   moveId: null, lookId: null, jumpId: null, tapId: null,
   moveStart: { x: 0, y: 0 }, moveCur: { x: 0, y: 0 },
   lookLast: { x: 0, y: 0 },
-  tapStartTime: 0, tapStart: { x: 0, y: 0 }, tapMoved: false,
+  tapStartTime: 0, tapMoved: false,
 };
 let yaw = 0, pitch = 0;
 
@@ -377,11 +350,7 @@ const jumpBtn = document.getElementById('jumpBtn');
 let selectedBlock = BLOCK.GRASS;
 const slotEls = document.querySelectorAll('.slot');
 const blockBySlot = {
-  1: BLOCK.GRASS,
-  2: BLOCK.DIRT,
-  3: BLOCK.STONE,
-  4: BLOCK.SAND,
-  5: BLOCK.WOOD,
+  1: BLOCK.GRASS, 2: BLOCK.DIRT, 3: BLOCK.STONE, 4: BLOCK.SAND, 5: BLOCK.WOOD,
 };
 function updateHotbarSelection() {
   slotEls.forEach(el => {
@@ -432,7 +401,6 @@ canvas.addEventListener('touchstart', e => {
       touch.lookLast = { x: t.clientX, y: t.clientY };
       touch.tapId = t.identifier;
       touch.tapStartTime = performance.now();
-      touch.tapStart = { x: t.clientX, y: t.clientY };
       touch.tapMoved = false;
     }
   }
@@ -489,7 +457,6 @@ function handleTap() {
   world.setBlockGlobal(hit.x, hit.y, hit.z, BLOCK.AIR);
 }
 
-// ==== INFO ====
 const infoX = document.getElementById('infoX');
 const infoY = document.getElementById('infoY');
 const infoZ = document.getElementById('infoZ');
@@ -501,14 +468,12 @@ function updateInfo() {
   infoZ.textContent = player.z.toFixed(0);
 }
 
-// ==== UPDATE ====
 function rebuildDirtyChunks(maxPerFrame = 2) {
   const dirty = world.consumeDirty();
   for (let i = 0; i < Math.min(maxPerFrame, dirty.length); i++) {
     const [cx, cz] = dirty[i].split(',').map(Number);
     buildChunkMesh(cx, cz);
   }
-  // Sisanya dibuang (jarang terjadi)
 }
 
 function updatePlayer() {
@@ -518,10 +483,8 @@ function updatePlayer() {
     const forward = -dy / 80;
     const strafe = dx / 80;
     const sin = Math.sin(yaw), cos = Math.cos(yaw);
-
     const nx = player.x + (-sin * forward + cos * strafe) * SPEED;
     const nz = player.z + (-cos * forward - sin * strafe) * SPEED;
-
     if (!collidesAt(nx, player.z)) player.x = nx;
     if (!collidesAt(player.x, nz)) player.z = nz;
   }
@@ -546,16 +509,25 @@ function updatePlayer() {
   camera.rotation.x = pitch;
 
   queueChunksAround(player.x, player.z);
-  processBuildQueue(1); // ← 1 chunk per frame
-  rebuildDirtyChunks(1);
+  processBuildQueue(2);
+  rebuildDirtyChunks(2);
 
   infoTimer++;
   if (infoTimer % 10 === 0) updateInfo();
 }
 
+function initialBuild() {
+  const pcx = Math.floor(player.x / 16);
+  const pcz = Math.floor(player.z / 16);
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      buildChunkMesh(pcx + dx, pcz + dz);
+    }
+  }
+}
+
+initialBuild();
 queueChunksAround(player.x, player.z);
-// Build awal 5 chunk biar tidak kosong
-for (let i = 0; i < 5; i++) processBuildQueue(1);
 updateHotbarSelection();
 
 function animate() {
