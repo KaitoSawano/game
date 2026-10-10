@@ -1,6 +1,11 @@
 {
-  "appId": "com.kaitosawano.game",
-  "appName": "VoxelGame",
-  "webDir": ".",
-  "bundledWebRuntime": false
+  "appId": "com.kaitosawano.openworld",
+  "appName": "OpenWorld",
+  "webDir": "src",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true
+  }
 }
