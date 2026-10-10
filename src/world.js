@@ -1,6 +1,5 @@
 import { Chunk } from './chunk.js';
 
-// Simple hash & value noise — cukup untuk terrain
 function hash(x, z) {
   let h = x * 374761393 + z * 668265263;
   h = (h ^ (h >> 13)) * 1274126177;
@@ -20,9 +19,9 @@ function noise2D(x, z) {
   return a * (1 - u) * (1 - v) + b * u * (1 - v) + c * (1 - u) * v + d * u * v;
 }
 
-function fbm(x, z) {
+function fbm(x, z, octaves = 4) {
   let v = 0, amp = 1, freq = 1, total = 0;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < octaves; i++) {
     v += noise2D(x * freq, z * freq) * amp;
     total += amp;
     amp *= 0.5;
@@ -32,14 +31,19 @@ function fbm(x, z) {
 }
 
 export const BLOCK = {
-  AIR: 0,
-  GRASS: 1,
-  DIRT: 2,
-  STONE: 3,
-  WATER: 4,
-  SAND: 5,
-  WOOD: 6,
-  LEAVES: 7,
+  AIR: 0, GRASS: 1, DIRT: 2, STONE: 3, WATER: 4, SAND: 5,
+  WOOD: 6, LEAVES: 7, SNOW: 8, CACTUS: 9, ICE: 10,
+  SANDSTONE: 11, BIRCH_WOOD: 12, BIRCH_LEAVES: 13,
+};
+
+export const BIOME = {
+  PLAINS: 0,
+  DESERT: 1,
+  FOREST: 2,
+  SNOW: 3,
+  OCEAN: 4,
+  BEACH: 5,
+  MOUNTAIN: 6,
 };
 
 export const CHUNK_H = 64;
@@ -72,15 +76,31 @@ export class World {
   }
 
   heightAt(gx, gz) {
-    const sx = (gx + this.seed) * 0.01;
-    const sz = (gz + this.seed) * 0.01;
-    const base = fbm(sx, sz);
-    const mountain = fbm(sx * 0.3 + 100, sz * 0.3 + 100);
-    let h = 6 + base * 10;
-    if (mountain > 0.65) {
-      h += (mountain - 0.65) * 60;
+    const sx = (gx + this.seed) * 0.008;
+    const sz = (gz + this.seed) * 0.008;
+    const base = fbm(sx, sz, 3);
+    const mountain = fbm(sx * 0.4 + 50, sz * 0.4 + 50, 2);
+
+    let h = 10 + base * 8;
+    if (mountain > 0.7) {
+      h += (mountain - 0.7) * 50;
     }
     return Math.floor(h);
+  }
+
+  biomeAt(gx, gz) {
+    const temp = fbm((gx + this.seed) * 0.003, (gz + this.seed) * 0.003, 2);
+    const humid = fbm((gx + this.seed * 2) * 0.004, (gz + this.seed * 2) * 0.004, 2);
+    const h = this.heightAt(gx, gz);
+
+    if (h < 9) return BIOME.OCEAN;
+    if (h < 10) return BIOME.BEACH;
+    if (h > 30) return BIOME.MOUNTAIN;
+
+    if (temp < 0.35) return BIOME.SNOW;
+    if (temp > 0.65 && humid < 0.4) return BIOME.DESERT;
+    if (humid > 0.55) return BIOME.FOREST;
+    return BIOME.PLAINS;
   }
 
   generate(cx, cz, chunk) {
@@ -89,59 +109,96 @@ export class World {
         const gx = cx * 16 + x;
         const gz = cz * 16 + z;
         const h = this.heightAt(gx, gz);
+        const biome = this.biomeAt(gx, gz);
+
+        // Tentukan blok permukaan & subsurface
+        let surface, subsurface, deep;
+        switch (biome) {
+          case BIOME.DESERT:
+            surface = BLOCK.SAND; subsurface = BLOCK.SANDSTONE; deep = BLOCK.STONE;
+            break;
+          case BIOME.SNOW:
+            surface = BLOCK.SNOW; subsurface = BLOCK.DIRT; deep = BLOCK.STONE;
+            break;
+          case BIOME.BEACH:
+            surface = BLOCK.SAND; subsurface = BLOCK.SAND; deep = BLOCK.STONE;
+            break;
+          case BIOME.MOUNTAIN:
+            surface = h > 38 ? BLOCK.SNOW : BLOCK.STONE;
+            subsurface = BLOCK.STONE; deep = BLOCK.STONE;
+            break;
+          case BIOME.OCEAN:
+            surface = BLOCK.SAND; subsurface = BLOCK.DIRT; deep = BLOCK.STONE;
+            break;
+          default:
+            surface = BLOCK.GRASS; subsurface = BLOCK.DIRT; deep = BLOCK.STONE;
+        }
 
         for (let y = 0; y <= h; y++) {
           let block;
-          if (y === h) {
-            if (h < 8) block = BLOCK.SAND;
-            else if (h > 20) block = BLOCK.STONE;
-            else block = BLOCK.GRASS;
-          } else if (y > h - 4) {
-            block = BLOCK.DIRT;
-          } else {
-            block = BLOCK.STONE;
-          }
+          if (y === h) block = surface;
+          else if (y > h - 4) block = subsurface;
+          else block = deep;
           chunk.set(x, y, z, block);
         }
 
-        if (h < 7) {
-          for (let y = h + 1; y <= 7; y++) {
-            chunk.set(x, y, z, BLOCK.WATER);
+        // Air
+        if (h < 9) {
+          for (let y = h + 1; y <= 8; y++) {
+            if (y === 8 && biome === BIOME.SNOW) chunk.set(x, y, z, BLOCK.ICE);
+            else chunk.set(x, y, z, BLOCK.WATER);
           }
         }
       }
     }
 
-    // Pohon hanya di area dalam chunk, dan hanya di rumput
-    for (let x = 3; x < 13; x++) {
-      for (let z = 3; z < 13; z++) {
+    // Vegetasi: hanya di area tengah chunk
+    for (let x = 5; x <= 11; x++) {
+      for (let z = 5; z <= 11; z++) {
         const gx = cx * 16 + x;
         const gz = cz * 16 + z;
         const h = this.heightAt(gx, gz);
-        if (h < 9 || h > 20) continue;
-        if (hash(gx * 7, gz * 13) < 0.985) continue;
-        this.placeTree(chunk, x, h + 1, z);
+        const biome = this.biomeAt(gx, gz);
+        if (h < 10 || h > 30) continue;
+
+        const r = hash(gx * 7, gz * 13);
+
+        if (biome === BIOME.FOREST) {
+          if (r > 0.92) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
+        } else if (biome === BIOME.PLAINS) {
+          if (r > 0.985) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
+        } else if (biome === BIOME.DESERT) {
+          if (r > 0.97) this.placeCactus(chunk, x, h + 1, z);
+        } else if (biome === BIOME.SNOW) {
+          if (r > 0.96) this.placeTree(chunk, x, h + 1, z, BLOCK.BIRCH_WOOD, BLOCK.BIRCH_LEAVES);
+        }
       }
     }
   }
 
-  placeTree(chunk, x, y, z) {
-    const trunkH = 4;
+  placeTree(chunk, x, y, z, woodBlock, leafBlock) {
+    const trunkH = 4 + Math.floor(hash(x * 3, z * 5) * 3);
     for (let i = 0; i < trunkH; i++) {
-      if (y + i < CHUNK_H) chunk.set(x, y + i, z, BLOCK.WOOD);
+      if (y + i < CHUNK_H) chunk.set(x, y + i, z, woodBlock);
     }
     const topY = y + trunkH;
     for (let dx = -2; dx <= 2; dx++) {
       for (let dz = -2; dz <= 2; dz++) {
         for (let dy = -1; dy <= 1; dy++) {
-          if (Math.abs(dx) === 2 && Math.abs(dz) === 2) continue;
-          if (dy === 1 && (Math.abs(dx) === 2 || Math.abs(dz) === 2)) continue;
+          if (Math.abs(dx) === 2 && Math.abs(dz) === 2 && dy !== 0) continue;
           const lx = x + dx, lz = z + dz, ly = topY + dy;
           if (lx < 0 || lx > 15 || lz < 0 || lz > 15) continue;
           if (ly < 0 || ly >= CHUNK_H) continue;
-          if (chunk.get(lx, ly, lz) === 0) chunk.set(lx, ly, lz, BLOCK.LEAVES);
+          if (chunk.get(lx, ly, lz) === 0) chunk.set(lx, ly, lz, leafBlock);
         }
       }
+    }
+  }
+
+  placeCactus(chunk, x, y, z) {
+    const h = 2 + Math.floor(hash(x * 5, z * 7) * 3);
+    for (let i = 0; i < h; i++) {
+      if (y + i < CHUNK_H) chunk.set(x, y + i, z, BLOCK.CACTUS);
     }
   }
 }
