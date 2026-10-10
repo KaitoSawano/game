@@ -30,6 +30,32 @@
 
   <div id="crosshair"></div>
 
+  <div id="errorBox" style="
+    position: fixed; top: 50px; left: 10px; right: 10px;
+    background: rgba(200,0,0,0.9); color: white;
+    padding: 10px; border-radius: 6px;
+    font-size: 11px; font-family: monospace;
+    z-index: 999; display: none; white-space: pre-wrap;
+    max-height: 40vh; overflow: auto;
+  "></div>
+
+  <script>
+    window.addEventListener('error', e => {
+      const box = document.getElementById('errorBox');
+      if (box) {
+        box.style.display = 'block';
+        box.textContent += '❌ ' + e.message + '\n  at ' + (e.filename || '?') + ':' + e.lineno + '\n\n';
+      }
+    });
+    window.addEventListener('unhandledrejection', e => {
+      const box = document.getElementById('errorBox');
+      if (box) {
+        box.style.display = 'block';
+        box.textContent += '❌ Promise: ' + (e.reason && e.reason.message ? e.reason.message : e.reason) + '\n\n';
+      }
+    });
+  </script>
+
   <script type="importmap">
   {
     "imports": {
