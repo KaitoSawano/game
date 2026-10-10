@@ -20,90 +20,86 @@ const sunLight = new THREE.DirectionalLight(0xffffff, 0.6);
 sunLight.position.set(10, 30, 10);
 scene.add(sunLight);
 
-// ==== ATLAS TEKSTUR ====
 const atlasTex = generateAtlas();
 
-// Material: satu material dengan atlas, vertex UV per blok
 const blockMat = new THREE.MeshLambertMaterial({
   map: atlasTex,
   transparent: true,
   alphaTest: 0.5,
   side: THREE.FrontSide,
+  vertexColors: true,
 });
 const waterMat = new THREE.MeshLambertMaterial({
   map: atlasTex,
   transparent: true,
   opacity: 0.75,
   side: THREE.DoubleSide,
+  vertexColors: true,
 });
 
-// ==== DUNIA ====
 const world = new World(12345);
 const chunkMeshes = new Map();
 const RENDER_DISTANCE = 3;
 
-// Face definitions dengan AO
-// corners: [x,y,z] dari 4 sudut, urutan CCW dari luar
 const FACES = [
   {
     dir: [ 1, 0, 0],
     corners: [[1,0,0],[1,0,1],[1,1,1],[1,1,0]],
-    // Untuk AO: 8 tetangga per face (2 side + 1 corner per vertex)
     ao: [
-      { v: 0, side1: [1,-1,0], side2: [1,0,-1], corner: [1,-1,-1] },
-      { v: 1, side1: [1,-1,0], side2: [1,0,1],  corner: [1,-1,1]  },
-      { v: 2, side1: [1,1,0],  side2: [1,0,1],  corner: [1,1,1]   },
-      { v: 3, side1: [1,1,0],  side2: [1,0,-1], corner: [1,1,-1]  },
+      { side1: [1,-1,0], side2: [1,0,-1], corner: [1,-1,-1] },
+      { side1: [1,-1,0], side2: [1,0,1],  corner: [1,-1,1]  },
+      { side1: [1,1,0],  side2: [1,0,1],  corner: [1,1,1]   },
+      { side1: [1,1,0],  side2: [1,0,-1], corner: [1,1,-1]  },
     ],
   },
   {
     dir: [-1, 0, 0],
     corners: [[0,0,1],[0,0,0],[0,1,0],[0,1,1]],
     ao: [
-      { v: 0, side1: [-1,-1,0], side2: [-1,0,1],  corner: [-1,-1,1]  },
-      { v: 1, side1: [-1,-1,0], side2: [-1,0,-1], corner: [-1,-1,-1] },
-      { v: 2, side1: [-1,1,0],  side2: [-1,0,-1], corner: [-1,1,-1]  },
-      { v: 3, side1: [-1,1,0],  side2: [-1,0,1],  corner: [-1,1,1]   },
+      { side1: [-1,-1,0], side2: [-1,0,1],  corner: [-1,-1,1]  },
+      { side1: [-1,-1,0], side2: [-1,0,-1], corner: [-1,-1,-1] },
+      { side1: [-1,1,0],  side2: [-1,0,-1], corner: [-1,1,-1]  },
+      { side1: [-1,1,0],  side2: [-1,0,1],  corner: [-1,1,1]   },
     ],
   },
   {
     dir: [0, 1, 0],
     corners: [[0,1,0],[1,1,0],[1,1,1],[0,1,1]],
     ao: [
-      { v: 0, side1: [-1,1,0], side2: [0,1,-1], corner: [-1,1,-1] },
-      { v: 1, side1: [1,1,0],  side2: [0,1,-1], corner: [1,1,-1]  },
-      { v: 2, side1: [1,1,0],  side2: [0,1,1],  corner: [1,1,1]   },
-      { v: 3, side1: [-1,1,0], side2: [0,1,1],  corner: [-1,1,1]  },
+      { side1: [-1,1,0], side2: [0,1,-1], corner: [-1,1,-1] },
+      { side1: [1,1,0],  side2: [0,1,-1], corner: [1,1,-1]  },
+      { side1: [1,1,0],  side2: [0,1,1],  corner: [1,1,1]   },
+      { side1: [-1,1,0], side2: [0,1,1],  corner: [-1,1,1]  },
     ],
   },
   {
     dir: [0, -1, 0],
     corners: [[0,0,1],[1,0,1],[1,0,0],[0,0,0]],
     ao: [
-      { v: 0, side1: [-1,-1,0], side2: [0,-1,1],  corner: [-1,-1,1]  },
-      { v: 1, side1: [1,-1,0],  side2: [0,-1,1],  corner: [1,-1,1]   },
-      { v: 2, side1: [1,-1,0],  side2: [0,-1,-1], corner: [1,-1,-1]  },
-      { v: 3, side1: [-1,-1,0], side2: [0,-1,-1], corner: [-1,-1,-1] },
+      { side1: [-1,-1,0], side2: [0,-1,1],  corner: [-1,-1,1]  },
+      { side1: [1,-1,0],  side2: [0,-1,1],  corner: [1,-1,1]   },
+      { side1: [1,-1,0],  side2: [0,-1,-1], corner: [1,-1,-1]  },
+      { side1: [-1,-1,0], side2: [0,-1,-1], corner: [-1,-1,-1] },
     ],
   },
   {
     dir: [0, 0, 1],
     corners: [[1,0,1],[0,0,1],[0,1,1],[1,1,1]],
     ao: [
-      { v: 0, side1: [1,0,1],  side2: [0,-1,1], corner: [1,-1,1]  },
-      { v: 1, side1: [-1,0,1], side2: [0,-1,1], corner: [-1,-1,1] },
-      { v: 2, side1: [-1,0,1], side2: [0,1,1],  corner: [-1,1,1]  },
-      { v: 3, side1: [1,0,1],  side2: [0,1,1],  corner: [1,1,1]   },
+      { side1: [1,0,1],  side2: [0,-1,1], corner: [1,-1,1]  },
+      { side1: [-1,0,1], side2: [0,-1,1], corner: [-1,-1,1] },
+      { side1: [-1,0,1], side2: [0,1,1],  corner: [-1,1,1]  },
+      { side1: [1,0,1],  side2: [0,1,1],  corner: [1,1,1]   },
     ],
   },
   {
     dir: [0, 0, -1],
     corners: [[0,0,0],[1,0,0],[1,1,0],[0,1,0]],
     ao: [
-      { v: 0, side1: [-1,0,-1], side2: [0,-1,-1], corner: [-1,-1,-1] },
-      { v: 1, side1: [1,0,-1],  side2: [0,-1,-1], corner: [1,-1,-1]  },
-      { v: 2, side1: [1,0,-1],  side2: [0,1,-1],  corner: [1,1,-1]   },
-      { v: 3, side1: [-1,0,-1], side2: [0,1,-1],  corner: [-1,1,-1]  },
+      { side1: [-1,0,-1], side2: [0,-1,-1], corner: [-1,-1,-1] },
+      { side1: [1,0,-1],  side2: [0,-1,-1], corner: [1,-1,-1]  },
+      { side1: [1,0,-1],  side2: [0,1,-1],  corner: [1,1,-1]   },
+      { side1: [-1,0,-1], side2: [0,1,-1],  corner: [-1,1,-1]  },
     ],
   },
 ];
@@ -157,7 +153,6 @@ function buildChunkMesh(cx, cz) {
         const isWater = b === BLOCK.WATER;
         const buf = isWater ? water : opaque;
 
-        // UV tile berdasarkan tipe blok
         for (let fi = 0; fi < FACES.length; fi++) {
           const face = FACES[fi];
           const nx = bx + x + face.dir[0];
@@ -166,11 +161,8 @@ function buildChunkMesh(cx, cz) {
           const nb = world.getBlockGlobal(nx, ny, nz);
 
           if (!isTransparent(nb)) continue;
-          if (isWater && !isTransparent(nb)) continue;
 
           const { u0, v0, u1, v1 } = getTileUV(b, face.dir);
-
-          // 4 vertex dengan UV mapping
           const cornerUVs = [
             [u0, v1],
             [u1, v1],
@@ -186,10 +178,7 @@ function buildChunkMesh(cx, cz) {
             const ao = computeAO(bx + x, y, bz + z, face, vi);
             buf.color.push(ao, ao, ao);
 
-            let uv = cornerUVs[vi];
-            // Koreksi UV per-face biar orientasi benar
-            if (face.dir[0] !== 0) uv = [cornerUVs[vi][0], cornerUVs[vi][1]];
-            buf.uv.push(uv[0], uv[1]);
+            buf.uv.push(cornerUVs[vi][0], cornerUVs[vi][1]);
           }
 
           buf.idx.push(buf.count, buf.count+1, buf.count+2, buf.count+2, buf.count+1, buf.count+3);
@@ -254,11 +243,9 @@ function updateChunks(px, pz) {
   }
 }
 
-// ==== SKY ====
 const cloudMesh = createClouds(scene);
 const sunSprite = createSun(scene);
 
-// ==== PLAYER ====
 function findSpawn() {
   for (let r = 0; r < 400; r++) {
     const tx = 8 + (r % 40) - 20;
@@ -298,7 +285,6 @@ function collidesAt(x, z) {
   return false;
 }
 
-// ==== INPUT ====
 const touch = {
   moveId: null, lookId: null, jumpId: null,
   moveStart: { x: 0, y: 0 }, moveCur: { x: 0, y: 0 },
@@ -379,7 +365,6 @@ canvas.addEventListener('touchend', e => {
   }
 }, { passive: false });
 
-// ==== INFO ====
 const infoX = document.getElementById('infoX');
 const infoY = document.getElementById('infoY');
 const infoZ = document.getElementById('infoZ');
@@ -391,7 +376,6 @@ function updateInfo() {
   infoZ.textContent = player.z.toFixed(0);
 }
 
-// ==== UPDATE ====
 function updatePlayer() {
   if (touch.moveId !== null) {
     const dx = touch.moveCur.x - touch.moveStart.x;
@@ -437,7 +421,6 @@ updateChunks(player.x, player.z);
 function animate() {
   requestAnimationFrame(animate);
   updatePlayer();
-  // Awan bergerak pelan
   cloudMesh.position.x = player.x;
   cloudMesh.position.z = player.z;
   cloudMesh.material.map.offset.x += 0.0003;
