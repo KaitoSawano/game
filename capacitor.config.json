@@ -1,7 +1,7 @@
 {
   "appId": "com.kaitosawano.openworld",
   "appName": "OpenWorld",
-  "webDir": ".",
+  "webDir": "src",
   "server": {
     "androidScheme": "https"
   },
