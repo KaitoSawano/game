@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { World, BLOCK, BIOME, CHUNK_H, SEA_LEVEL } from './world.js';
-import { BLOCK_TEXTURES, getMaterial, getTintForBlock } from './textures.js';
+import { BLOCK_TEXTURES, getMaterial, getTintForBlock, loadAllTextures, getLoadProgress } from './textures.js';
 import { createClouds, createSun } from './sky.js';
 
 const canvas = document.getElementById('game');
@@ -79,7 +79,6 @@ function computeAO(gx, gy, gz, face, vi) {
   return 1.0 - (s1 + s2 + c) * 0.15;
 }
 
-// Dapatkan nama file texture untuk blok + face
 function getTextureFile(blockType, faceDir) {
   const t = BLOCK_TEXTURES[blockType];
   if (!t) return 'rock.png';
@@ -100,16 +99,14 @@ function buildChunkMesh(cx, cz) {
   const chunk = world.getChunk(cx, cz);
   const bx = cx * 16, bz = cz * 16;
 
-  // Buffers per (filename + transparent flag)
-  // key: "filename_t" atau "filename"
   const buffers = new Map();
 
   function getBuf(filename, transparent) {
-    const key = filename + (transparent ? '_t' : '');
-    if (!buffers.has(key)) {
-      buffers.set(key, { filename, transparent, pos: [], norm: [], uv: [], color: [], idx: [], count: 0 });
+    const bufKey = filename + (transparent ? '_t' : '');
+    if (!buffers.has(bufKey)) {
+      buffers.set(bufKey, { filename, transparent, pos: [], norm: [], uv: [], color: [], idx: [], count: 0 });
     }
-    return buffers.get(key);
+    return buffers.get(bufKey);
   }
 
   let maxY = 0;
@@ -147,7 +144,6 @@ function buildChunkMesh(cx, cz) {
           const filename = getTextureFile(b, face.dir);
           const buf = getBuf(filename, isWater);
 
-          // UV: 0..1 (karena tiap PNG = satu blok penuh)
           const cornerUVs = [
             [0, 0],
             [1, 0],
@@ -501,9 +497,29 @@ function initialBuild() {
   }
 }
 
-initialBuild();
-queueChunksAround(player.x, player.z);
-updateHotbarSelection();
+function showLoading() {
+  const box = document.getElementById('errorBox');
+  if (box) {
+    box.style.display = 'block';
+    box.style.background = 'rgba(0,0,0,0.85)';
+    box.textContent = '⏳ Loading textures...';
+  }
+}
+
+function hideLoading() {
+  const box = document.getElementById('errorBox');
+  if (box) box.style.display = 'none';
+}
+
+// ==== START ====
+showLoading();
+loadAllTextures().then(() => {
+  hideLoading();
+  initialBuild();
+  queueChunksAround(player.x, player.z);
+  updateHotbarSelection();
+  animate();
+});
 
 function animate() {
   requestAnimationFrame(animate);
@@ -514,7 +530,6 @@ function animate() {
   sunSprite.position.set(player.x + 150, 200, player.z - 150);
   renderer.render(scene, camera);
 }
-animate();
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
