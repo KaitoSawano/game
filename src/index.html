@@ -5,12 +5,40 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
   <title>VoxelGame</title>
   <style>
-    body { margin: 0; overflow: hidden; touch-action: none; background: #111; }
+    html, body { margin: 0; padding: 0; overflow: hidden; background: #111; touch-action: none; }
     canvas { display: block; }
+
+    #joyBase {
+      position: fixed;
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      border: 2px solid rgba(255,255,255,0.4);
+      pointer-events: none;
+      display: none;
+      z-index: 10;
+    }
+
+    #joyKnob {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.5);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
   <canvas id="game"></canvas>
+
+  <div id="joyBase">
+    <div id="joyKnob"></div>
+  </div>
 
   <script type="importmap">
   {
