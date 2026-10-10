@@ -40,9 +40,13 @@ const world = new World(12345);
 const chunkMeshes = new Map();
 const RENDER_DISTANCE = 3;
 
+// ==== FACE DEFINITIONS ====
+// corners: 4 titik sudut, urutan CCW dilihat DARI LUAR
+// ao: 8 tetangga per vertex untuk ambient occlusion
 const FACES = [
+  // +X (kanan)
   {
-    dir: [ 1, 0, 0],
+    dir: [1, 0, 0],
     corners: [[1,0,0],[1,0,1],[1,1,1],[1,1,0]],
     ao: [
       { side1: [1,-1,0], side2: [1,0,-1], corner: [1,-1,-1] },
@@ -51,6 +55,7 @@ const FACES = [
       { side1: [1,1,0],  side2: [1,0,-1], corner: [1,1,-1]  },
     ],
   },
+  // -X (kiri)
   {
     dir: [-1, 0, 0],
     corners: [[0,0,1],[0,0,0],[0,1,0],[0,1,1]],
@@ -61,44 +66,48 @@ const FACES = [
       { side1: [-1,1,0],  side2: [-1,0,1],  corner: [-1,1,1]   },
     ],
   },
+  // +Y (atas)
   {
     dir: [0, 1, 0],
-    corners: [[0,1,0],[1,1,0],[1,1,1],[0,1,1]],
+    corners: [[0,1,1],[1,1,1],[1,1,0],[0,1,0]],
     ao: [
-      { side1: [-1,1,0], side2: [0,1,-1], corner: [-1,1,-1] },
-      { side1: [1,1,0],  side2: [0,1,-1], corner: [1,1,-1]  },
-      { side1: [1,1,0],  side2: [0,1,1],  corner: [1,1,1]   },
-      { side1: [-1,1,0], side2: [0,1,1],  corner: [-1,1,1]  },
+      { side1: [-1,1,1], side2: [0,1,1], corner: [-1,1,1] },
+      { side1: [1,1,1],  side2: [0,1,1], corner: [1,1,1]  },
+      { side1: [1,1,-1], side2: [0,1,-1], corner: [1,1,-1] },
+      { side1: [-1,1,-1], side2: [0,1,-1], corner: [-1,1,-1] },
     ],
   },
+  // -Y (bawah)
   {
     dir: [0, -1, 0],
-    corners: [[0,0,1],[1,0,1],[1,0,0],[0,0,0]],
+    corners: [[0,0,0],[1,0,0],[1,0,1],[0,0,1]],
     ao: [
-      { side1: [-1,-1,0], side2: [0,-1,1],  corner: [-1,-1,1]  },
-      { side1: [1,-1,0],  side2: [0,-1,1],  corner: [1,-1,1]   },
-      { side1: [1,-1,0],  side2: [0,-1,-1], corner: [1,-1,-1]  },
       { side1: [-1,-1,0], side2: [0,-1,-1], corner: [-1,-1,-1] },
+      { side1: [1,-1,0],  side2: [0,-1,-1], corner: [1,-1,-1]  },
+      { side1: [1,-1,0],  side2: [0,-1,1],  corner: [1,-1,1]   },
+      { side1: [-1,-1,0], side2: [0,-1,1],  corner: [-1,-1,1]  },
     ],
   },
+  // +Z (depan)
   {
     dir: [0, 0, 1],
-    corners: [[1,0,1],[0,0,1],[0,1,1],[1,1,1]],
+    corners: [[0,0,1],[1,0,1],[1,1,1],[0,1,1]],
     ao: [
-      { side1: [1,0,1],  side2: [0,-1,1], corner: [1,-1,1]  },
       { side1: [-1,0,1], side2: [0,-1,1], corner: [-1,-1,1] },
-      { side1: [-1,0,1], side2: [0,1,1],  corner: [-1,1,1]  },
+      { side1: [1,0,1],  side2: [0,-1,1], corner: [1,-1,1]  },
       { side1: [1,0,1],  side2: [0,1,1],  corner: [1,1,1]   },
+      { side1: [-1,0,1], side2: [0,1,1],  corner: [-1,1,1]  },
     ],
   },
+  // -Z (belakang)
   {
     dir: [0, 0, -1],
-    corners: [[0,0,0],[1,0,0],[1,1,0],[0,1,0]],
+    corners: [[1,0,0],[0,0,0],[0,1,0],[1,1,0]],
     ao: [
-      { side1: [-1,0,-1], side2: [0,-1,-1], corner: [-1,-1,-1] },
       { side1: [1,0,-1],  side2: [0,-1,-1], corner: [1,-1,-1]  },
-      { side1: [1,0,-1],  side2: [0,1,-1],  corner: [1,1,-1]   },
+      { side1: [-1,0,-1], side2: [0,-1,-1], corner: [-1,-1,-1] },
       { side1: [-1,0,-1], side2: [0,1,-1],  corner: [-1,1,-1]  },
+      { side1: [1,0,-1],  side2: [0,1,-1],  corner: [1,1,-1]   },
     ],
   },
 ];
@@ -163,8 +172,7 @@ function buildChunkMesh(cx, cz) {
 
           const { u0, u1 } = getTileUV(b, face.dir);
 
-          // UV: origin Three.js di kiri-bawah, canvas di kiri-atas
-          // flipY = false di atlas, jadi v=0 = atas, v=1 = bawah
+          // UV: v=0 di atas, v=1 di bawah (karena atlas flipY=false)
           const cornerUVs = [
             [u0, 0],
             [u1, 0],
@@ -183,7 +191,9 @@ function buildChunkMesh(cx, cz) {
             buf.uv.push(cornerUVs[vi][0], cornerUVs[vi][1]);
           }
 
-          buf.idx.push(buf.count, buf.count + 1, buf.count + 2, buf.count + 2, buf.count + 1, buf.count + 3);
+          // Urutan segitiga KONSISTEN: 0-1-2 dan 0-2-3
+          buf.idx.push(buf.count, buf.count + 1, buf.count + 2);
+          buf.idx.push(buf.count, buf.count + 2, buf.count + 3);
           buf.count += 4;
         }
       }
