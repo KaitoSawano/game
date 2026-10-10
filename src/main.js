@@ -478,4 +478,55 @@ function updatePlayer() {
     const strafe = dx / 80;
     const sin = Math.sin(yaw), cos = Math.cos(yaw);
 
-    const nx = player
+    const nx = player.x + (-sin * forward + cos * strafe) * SPEED;
+    const nz = player.z + (-cos * forward - sin * strafe) * SPEED;
+
+    if (!collidesAt(nx, player.z)) player.x = nx;
+    if (!collidesAt(player.x, nz)) player.z = nz;
+  }
+
+  player.vy -= GRAVITY;
+  player.vy = Math.max(player.vy, -0.6);
+  player.y += player.vy;
+
+  const feetY = Math.floor(player.y - EYE);
+  if (isSolidAt(player.x, feetY, player.z)) {
+    player.y = feetY + 1 + EYE;
+    player.vy = 0;
+    player.onGround = true;
+  } else {
+    player.onGround = false;
+  }
+
+  if (player.y < -10) { player.y = 30; player.vy = 0; }
+
+  camera.position.set(player.x, player.y, player.z);
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
+
+  updateChunks(player.x, player.z);
+  rebuildDirtyChunks();
+
+  infoTimer++;
+  if (infoTimer % 10 === 0) updateInfo();
+}
+
+updateChunks(player.x, player.z);
+updateHotbarSelection();
+
+function animate() {
+  requestAnimationFrame(animate);
+  updatePlayer();
+  cloudMesh.position.x = player.x;
+  cloudMesh.position.z = player.z;
+  cloudMesh.material.map.offset.x += 0.0003;
+  sunSprite.position.set(player.x + 150, 200, player.z - 150);
+  renderer.render(scene, camera);
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
