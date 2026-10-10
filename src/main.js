@@ -2,72 +2,112 @@ import * as THREE from 'three';
 import { World } from './world.js';
 
 const canvas = document.getElementById('game');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.setSize(innerWidth, innerHeight);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 40, 100);
+scene.fog = new THREE.Fog(0x87ceeb, 30, 80);
 
-const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 500);
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+scene.add(new THREE.AmbientLight(0xffffff, 0.7));
 const sun = new THREE.DirectionalLight(0xffffff, 0.8);
 sun.position.set(10, 20, 10);
 scene.add(sun);
 
 const world = new World();
-const geo = new THREE.BoxGeometry(1, 1, 1);
-const mat = new THREE.MeshLambertMaterial({ color: 0x44aa44 });
 
-const chunkMeshes = new Map(); // key: "cx,cz" → THREE.Group
-const RENDER_DISTANCE = 4; // chunk radius
+// Material bersama (hemat memori)
+const blockMat = new THREE.MeshLambertMaterial({ color: 0x44aa44 });
+
+// Tekstur atlas tidak dipakai, pakai warna solid
+const blockGeo = new THREE.BoxGeometry(1, 1, 1);
+
+const chunkMeshes = new Map();
+const RENDER_DISTANCE = 3;
+
+// ==== FACE CULLING: hanya render sisi yang menghadap udara ====
+const FACES = [
+  { dir: [ 1, 0, 0], corners: [[1,0,0],[1,0,1],[1,1,0],[1,1,1]], normal: [ 1, 0, 0] },
+  { dir: [-1, 0, 0], corners: [[0,0,1],[0,0,0],[0,1,1],[0,1,0]], normal: [-1, 0, 0] },
+  { dir: [ 0, 1, 0], corners: [[0,1,0],[1,1,0],[0,1,1],[1,1,1]], normal: [ 0, 1, 0] },
+  { dir: [ 0,-1, 0], corners: [[0,0,1],[1,0,1],[0,0,0],[1,0,0]], normal: [ 0,-1, 0] },
+  { dir: [ 0, 0, 1], corners: [[1,0,1],[0,0,1],[1,1,1],[0,1,1]], normal: [ 0, 0, 1] },
+  { dir: [ 0, 0,-1], corners: [[0,0,0],[1,0,0],[0,1,0],[1,1,0]], normal: [ 0, 0,-1] },
+];
 
 function buildChunkMesh(cx, cz) {
   const key = `${cx},${cz}`;
   if (chunkMeshes.has(key)) return;
 
   const chunk = world.getChunk(cx, cz);
-  const group = new THREE.Group();
+  const positions = [];
+  const normals = [];
+  const indices = [];
+  let idx = 0;
+
+  const bx = cx * 16;
+  const bz = cz * 16;
 
   for (let x = 0; x < 16; x++) {
-    for (let y = 0; y < 4; y++) {
+    for (let y = 0; y < 16; y++) {
       for (let z = 0; z < 16; z++) {
         if (chunk.get(x, y, z) === 0) continue;
-        const block = new THREE.Mesh(geo, mat);
-        block.position.set(cx * 16 + x, y, cz * 16 + z);
-        group.add(block);
+
+        // Cek 6 tetangga
+        for (const face of FACES) {
+          const nx = bx + x + face.dir[0];
+          const ny = y + face.dir[1];
+          const nz = bz + z + face.dir[2];
+          if (world.getBlockGlobal(nx, ny, nz) !== 0) continue; // tertutup, skip
+
+          // Tambah 4 vertex
+          for (const c of face.corners) {
+            positions.push(bx + x + c[0], y + c[1], bz + z + c[2]);
+            normals.push(...face.normal);
+          }
+
+          // 2 segitiga
+          indices.push(idx, idx + 1, idx + 2, idx + 2, idx + 1, idx + 3);
+          idx += 4;
+        }
       }
     }
   }
 
-  scene.add(group);
-  chunkMeshes.set(key, group);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setIndex(indices);
+
+  const mesh = new THREE.Mesh(geo, blockMat);
+  mesh.frustumCulled = true;
+  scene.add(mesh);
+  chunkMeshes.set(key, mesh);
 }
 
 function unloadChunkMesh(cx, cz) {
   const key = `${cx},${cz}`;
-  const group = chunkMeshes.get(key);
-  if (!group) return;
-  scene.remove(group);
-  group.traverse(obj => { if (obj.geometry) obj.geometry.dispose?.(); });
+  const mesh = chunkMeshes.get(key);
+  if (!mesh) return;
+  scene.remove(mesh);
+  mesh.geometry.dispose();
   chunkMeshes.delete(key);
 }
 
-function updateChunks(playerX, playerZ) {
-  const pcx = Math.floor(playerX / 16);
-  const pcz = Math.floor(playerZ / 16);
+function updateChunks(px, pz) {
+  const pcx = Math.floor(px / 16);
+  const pcz = Math.floor(pz / 16);
 
-  // Load chunk di sekitar
   for (let dx = -RENDER_DISTANCE; dx <= RENDER_DISTANCE; dx++) {
     for (let dz = -RENDER_DISTANCE; dz <= RENDER_DISTANCE; dz++) {
       buildChunkMesh(pcx + dx, pcz + dz);
     }
   }
 
-  // Unload chunk yang jauh
-  for (const key of chunkMeshes.keys()) {
+  for (const key of [...chunkMeshes.keys()]) {
     const [cx, cz] = key.split(',').map(Number);
     if (Math.abs(cx - pcx) > RENDER_DISTANCE + 1 || Math.abs(cz - pcz) > RENDER_DISTANCE + 1) {
       unloadChunkMesh(cx, cz);
@@ -75,7 +115,7 @@ function updateChunks(playerX, playerZ) {
   }
 }
 
-// ==== KONTROL SENTUH ====
+// ==== KONTROL ====
 const touch = { moveId: null, lookId: null, moveStart: { x: 0, y: 0 }, moveCur: { x: 0, y: 0 }, lookLast: { x: 0, y: 0 } };
 let yaw = 0, pitch = 0;
 
@@ -114,11 +154,17 @@ canvas.addEventListener('touchend', e => {
   }
 }, { passive: false });
 
-// ==== PLAYER ====
-const player = { x: 8, y: 6, z: 8 };
+// ==== PLAYER + GRAVITY ====
+const player = { x: 8, y: 10, z: 8, vy: 0, onGround: false };
 const speed = 0.15;
+const GRAVITY = 0.02;
+
+function isSolid(gx, gy, gz) {
+  return world.getBlockGlobal(Math.floor(gx), Math.floor(gy), Math.floor(gz)) !== 0;
+}
 
 function updatePlayer() {
+  // Horizontal
   if (touch.moveId !== null) {
     const dx = touch.moveCur.x - touch.moveStart.x;
     const dy = touch.moveCur.y - touch.moveStart.y;
@@ -130,6 +176,20 @@ function updatePlayer() {
     player.z += (-cos * forward - sin * strafe) * speed;
   }
 
+  // Gravity
+  player.vy -= GRAVITY;
+  player.y += player.vy;
+
+  // Collision tanah (cek di bawah kaki)
+  const feetY = Math.floor(player.y - 1.6);
+  if (isSolid(player.x, feetY, player.z)) {
+    player.y = feetY + 1.6;
+    player.vy = 0;
+    player.onGround = true;
+  } else {
+    player.onGround = false;
+  }
+
   camera.position.set(player.x, player.y, player.z);
   camera.rotation.order = 'YXZ';
   camera.rotation.y = yaw;
@@ -138,7 +198,6 @@ function updatePlayer() {
   updateChunks(player.x, player.z);
 }
 
-// Init
 updateChunks(player.x, player.z);
 
 function animate() {
