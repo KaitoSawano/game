@@ -24,11 +24,10 @@ const atlasTex = generateAtlas();
 
 const blockMat = new THREE.MeshLambertMaterial({
   map: atlasTex,
-  transparent: true,
-  alphaTest: 0.5,
   side: THREE.FrontSide,
   vertexColors: true,
 });
+
 const waterMat = new THREE.MeshLambertMaterial({
   map: atlasTex,
   transparent: true,
@@ -123,7 +122,7 @@ function computeAO(gx, gy, gz, face, vi) {
 
 function getTileUV(blockType, faceDir) {
   const t = BLOCK_TILES[blockType];
-  if (!t) return { u0: 0, v0: 0, u1: 1/ATLAS_COLS, v1: 1 };
+  if (!t) return { u0: 0, u1: 1 / ATLAS_COLS };
   let tileIdx;
   if (faceDir[1] === 1) tileIdx = t.top;
   else if (faceDir[1] === -1) tileIdx = t.bottom;
@@ -131,7 +130,7 @@ function getTileUV(blockType, faceDir) {
 
   const u0 = tileIdx / ATLAS_COLS;
   const u1 = (tileIdx + 1) / ATLAS_COLS;
-  return { u0, v0: 0, u1, v1: 1 };
+  return { u0, u1 };
 }
 
 function buildChunkMesh(cx, cz) {
@@ -162,12 +161,15 @@ function buildChunkMesh(cx, cz) {
 
           if (!isTransparent(nb)) continue;
 
-          const { u0, v0, u1, v1 } = getTileUV(b, face.dir);
+          const { u0, u1 } = getTileUV(b, face.dir);
+
+          // UV: origin Three.js di kiri-bawah, canvas di kiri-atas
+          // flipY = false di atlas, jadi v=0 = atas, v=1 = bawah
           const cornerUVs = [
-            [u0, v1],
-            [u1, v1],
-            [u1, v0],
-            [u0, v0],
+            [u0, 0],
+            [u1, 0],
+            [u1, 1],
+            [u0, 1],
           ];
 
           for (let vi = 0; vi < 4; vi++) {
@@ -181,7 +183,7 @@ function buildChunkMesh(cx, cz) {
             buf.uv.push(cornerUVs[vi][0], cornerUVs[vi][1]);
           }
 
-          buf.idx.push(buf.count, buf.count+1, buf.count+2, buf.count+2, buf.count+1, buf.count+3);
+          buf.idx.push(buf.count, buf.count + 1, buf.count + 2, buf.count + 2, buf.count + 1, buf.count + 3);
           buf.count += 4;
         }
       }
