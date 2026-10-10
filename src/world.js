@@ -37,13 +37,8 @@ export const BLOCK = {
 };
 
 export const BIOME = {
-  PLAINS: 0,
-  DESERT: 1,
-  FOREST: 2,
-  SNOW: 3,
-  OCEAN: 4,
-  BEACH: 5,
-  MOUNTAIN: 6,
+  PLAINS: 0, DESERT: 1, FOREST: 2, SNOW: 3,
+  OCEAN: 4, BEACH: 5, MOUNTAIN: 6,
 };
 
 export const CHUNK_H = 64;
@@ -111,7 +106,6 @@ export class World {
         const h = this.heightAt(gx, gz);
         const biome = this.biomeAt(gx, gz);
 
-        // Tentukan blok permukaan & subsurface
         let surface, subsurface, deep;
         switch (biome) {
           case BIOME.DESERT:
@@ -142,7 +136,6 @@ export class World {
           chunk.set(x, y, z, block);
         }
 
-        // Air
         if (h < 9) {
           for (let y = h + 1; y <= 8; y++) {
             if (y === 8 && biome === BIOME.SNOW) chunk.set(x, y, z, BLOCK.ICE);
@@ -152,7 +145,6 @@ export class World {
       }
     }
 
-    // Vegetasi: hanya di area tengah chunk
     for (let x = 5; x <= 11; x++) {
       for (let z = 5; z <= 11; z++) {
         const gx = cx * 16 + x;
