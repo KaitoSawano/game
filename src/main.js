@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { World, BLOCK, CHUNK_H } from './world.js';
+import { World, BLOCK, BIOME, CHUNK_H } from './world.js';
+import { generateAtlas, BLOCK_TILES, TILE_SIZE, ATLAS_COLS } from './textures.js';
+import { createClouds, createSun } from './sky.js';
 
 const canvas = document.getElementById('game');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
@@ -8,49 +10,132 @@ renderer.setSize(innerWidth, innerHeight);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 40, 90);
+scene.fog = new THREE.Fog(0x87ceeb, 50, 100);
 
-const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 500);
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 600);
 camera.rotation.order = 'YXZ';
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.75));
-const sun = new THREE.DirectionalLight(0xffffff, 0.7);
-sun.position.set(10, 30, 10);
-scene.add(sun);
+scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+const sunLight = new THREE.DirectionalLight(0xffffff, 0.6);
+sunLight.position.set(10, 30, 10);
+scene.add(sunLight);
 
+// ==== ATLAS TEKSTUR ====
+const atlasTex = generateAtlas();
+
+// Material: satu material dengan atlas, vertex UV per blok
+const blockMat = new THREE.MeshLambertMaterial({
+  map: atlasTex,
+  transparent: true,
+  alphaTest: 0.5,
+  side: THREE.FrontSide,
+});
+const waterMat = new THREE.MeshLambertMaterial({
+  map: atlasTex,
+  transparent: true,
+  opacity: 0.75,
+  side: THREE.DoubleSide,
+});
+
+// ==== DUNIA ====
 const world = new World(12345);
-
-const COLORS = {
-  [BLOCK.GRASS]: 0x4caf50,
-  [BLOCK.DIRT]:  0x8b5a2b,
-  [BLOCK.STONE]: 0x888888,
-  [BLOCK.WATER]: 0x3399ff,
-  [BLOCK.SAND]:  0xe8d68a,
-  [BLOCK.WOOD]:  0x6b4423,
-  [BLOCK.LEAVES]:0x2e7d32,
-};
-
-const materials = {};
-for (const k in COLORS) {
-  materials[k] = new THREE.MeshLambertMaterial({ color: COLORS[k] });
-}
-materials[BLOCK.WATER].transparent = true;
-materials[BLOCK.WATER].opacity = 0.7;
-
 const chunkMeshes = new Map();
 const RENDER_DISTANCE = 3;
 
+// Face definitions dengan AO
+// corners: [x,y,z] dari 4 sudut, urutan CCW dari luar
 const FACES = [
-  { dir: [ 1,0,0], corners: [[1,0,0],[1,0,1],[1,1,0],[1,1,1]] },
-  { dir: [-1,0,0], corners: [[0,0,1],[0,0,0],[0,1,1],[0,1,0]] },
-  { dir: [0, 1,0], corners: [[0,1,0],[1,1,0],[0,1,1],[1,1,1]] },
-  { dir: [0,-1,0], corners: [[0,0,1],[1,0,1],[0,0,0],[1,0,0]] },
-  { dir: [0,0, 1], corners: [[1,0,1],[0,0,1],[1,1,1],[0,1,1]] },
-  { dir: [0,0,-1], corners: [[0,0,0],[1,0,0],[0,1,0],[1,1,0]] },
+  {
+    dir: [ 1, 0, 0],
+    corners: [[1,0,0],[1,0,1],[1,1,1],[1,1,0]],
+    // Untuk AO: 8 tetangga per face (2 side + 1 corner per vertex)
+    ao: [
+      { v: 0, side1: [1,-1,0], side2: [1,0,-1], corner: [1,-1,-1] },
+      { v: 1, side1: [1,-1,0], side2: [1,0,1],  corner: [1,-1,1]  },
+      { v: 2, side1: [1,1,0],  side2: [1,0,1],  corner: [1,1,1]   },
+      { v: 3, side1: [1,1,0],  side2: [1,0,-1], corner: [1,1,-1]  },
+    ],
+  },
+  {
+    dir: [-1, 0, 0],
+    corners: [[0,0,1],[0,0,0],[0,1,0],[0,1,1]],
+    ao: [
+      { v: 0, side1: [-1,-1,0], side2: [-1,0,1],  corner: [-1,-1,1]  },
+      { v: 1, side1: [-1,-1,0], side2: [-1,0,-1], corner: [-1,-1,-1] },
+      { v: 2, side1: [-1,1,0],  side2: [-1,0,-1], corner: [-1,1,-1]  },
+      { v: 3, side1: [-1,1,0],  side2: [-1,0,1],  corner: [-1,1,1]   },
+    ],
+  },
+  {
+    dir: [0, 1, 0],
+    corners: [[0,1,0],[1,1,0],[1,1,1],[0,1,1]],
+    ao: [
+      { v: 0, side1: [-1,1,0], side2: [0,1,-1], corner: [-1,1,-1] },
+      { v: 1, side1: [1,1,0],  side2: [0,1,-1], corner: [1,1,-1]  },
+      { v: 2, side1: [1,1,0],  side2: [0,1,1],  corner: [1,1,1]   },
+      { v: 3, side1: [-1,1,0], side2: [0,1,1],  corner: [-1,1,1]  },
+    ],
+  },
+  {
+    dir: [0, -1, 0],
+    corners: [[0,0,1],[1,0,1],[1,0,0],[0,0,0]],
+    ao: [
+      { v: 0, side1: [-1,-1,0], side2: [0,-1,1],  corner: [-1,-1,1]  },
+      { v: 1, side1: [1,-1,0],  side2: [0,-1,1],  corner: [1,-1,1]   },
+      { v: 2, side1: [1,-1,0],  side2: [0,-1,-1], corner: [1,-1,-1]  },
+      { v: 3, side1: [-1,-1,0], side2: [0,-1,-1], corner: [-1,-1,-1] },
+    ],
+  },
+  {
+    dir: [0, 0, 1],
+    corners: [[1,0,1],[0,0,1],[0,1,1],[1,1,1]],
+    ao: [
+      { v: 0, side1: [1,0,1],  side2: [0,-1,1], corner: [1,-1,1]  },
+      { v: 1, side1: [-1,0,1], side2: [0,-1,1], corner: [-1,-1,1] },
+      { v: 2, side1: [-1,0,1], side2: [0,1,1],  corner: [-1,1,1]  },
+      { v: 3, side1: [1,0,1],  side2: [0,1,1],  corner: [1,1,1]   },
+    ],
+  },
+  {
+    dir: [0, 0, -1],
+    corners: [[0,0,0],[1,0,0],[1,1,0],[0,1,0]],
+    ao: [
+      { v: 0, side1: [-1,0,-1], side2: [0,-1,-1], corner: [-1,-1,-1] },
+      { v: 1, side1: [1,0,-1],  side2: [0,-1,-1], corner: [1,-1,-1]  },
+      { v: 2, side1: [1,0,-1],  side2: [0,1,-1],  corner: [1,1,-1]   },
+      { v: 3, side1: [-1,0,-1], side2: [0,1,-1],  corner: [-1,1,-1]  },
+    ],
+  },
 ];
 
 function isTransparent(b) {
   return b === BLOCK.AIR || b === BLOCK.WATER;
+}
+
+function isSolid(b) {
+  return b !== BLOCK.AIR && b !== BLOCK.WATER;
+}
+
+function computeAO(gx, gy, gz, face, vi) {
+  const a = face.ao[vi];
+  const s1 = isSolid(world.getBlockGlobal(gx + a.side1[0], gy + a.side1[1], gz + a.side1[2])) ? 1 : 0;
+  const s2 = isSolid(world.getBlockGlobal(gx + a.side2[0], gy + a.side2[1], gz + a.side2[2])) ? 1 : 0;
+  const c  = isSolid(world.getBlockGlobal(gx + a.corner[0], gy + a.corner[1], gz + a.corner[2])) ? 1 : 0;
+  if (s1 && s2) return 0.5;
+  return 1.0 - (s1 + s2 + c) * 0.15;
+}
+
+function getTileUV(blockType, faceDir) {
+  const t = BLOCK_TILES[blockType];
+  if (!t) return { u0: 0, v0: 0, u1: 1/ATLAS_COLS, v1: 1 };
+  let tileIdx;
+  if (faceDir[1] === 1) tileIdx = t.top;
+  else if (faceDir[1] === -1) tileIdx = t.bottom;
+  else tileIdx = t.side;
+
+  const u0 = tileIdx / ATLAS_COLS;
+  const u1 = (tileIdx + 1) / ATLAS_COLS;
+  return { u0, v0: 0, u1, v1: 1 };
 }
 
 function buildChunkMesh(cx, cz) {
@@ -59,7 +144,9 @@ function buildChunkMesh(cx, cz) {
 
   const chunk = world.getChunk(cx, cz);
   const bx = cx * 16, bz = cz * 16;
-  const buffers = {};
+
+  const opaque = { pos: [], norm: [], uv: [], color: [], idx: [], count: 0 };
+  const water  = { pos: [], norm: [], uv: [], color: [], idx: [], count: 0 };
 
   for (let x = 0; x < 16; x++) {
     for (let y = 0; y < CHUNK_H; y++) {
@@ -67,20 +154,44 @@ function buildChunkMesh(cx, cz) {
         const b = chunk.get(x, y, z);
         if (b === BLOCK.AIR) continue;
 
-        if (!buffers[b]) buffers[b] = { pos: [], norm: [], idx: [], count: 0 };
-        const buf = buffers[b];
+        const isWater = b === BLOCK.WATER;
+        const buf = isWater ? water : opaque;
 
-        for (const face of FACES) {
+        // UV tile berdasarkan tipe blok
+        for (let fi = 0; fi < FACES.length; fi++) {
+          const face = FACES[fi];
           const nx = bx + x + face.dir[0];
           const ny = y + face.dir[1];
           const nz = bz + z + face.dir[2];
           const nb = world.getBlockGlobal(nx, ny, nz);
-          if (!isTransparent(nb)) continue;
 
-          for (const c of face.corners) {
+          if (!isTransparent(nb)) continue;
+          if (isWater && !isTransparent(nb)) continue;
+
+          const { u0, v0, u1, v1 } = getTileUV(b, face.dir);
+
+          // 4 vertex dengan UV mapping
+          const cornerUVs = [
+            [u0, v1],
+            [u1, v1],
+            [u1, v0],
+            [u0, v0],
+          ];
+
+          for (let vi = 0; vi < 4; vi++) {
+            const c = face.corners[vi];
             buf.pos.push(bx + x + c[0], y + c[1], bz + z + c[2]);
             buf.norm.push(...face.dir);
+
+            const ao = computeAO(bx + x, y, bz + z, face, vi);
+            buf.color.push(ao, ao, ao);
+
+            let uv = cornerUVs[vi];
+            // Koreksi UV per-face biar orientasi benar
+            if (face.dir[0] !== 0) uv = [cornerUVs[vi][0], cornerUVs[vi][1]];
+            buf.uv.push(uv[0], uv[1]);
           }
+
           buf.idx.push(buf.count, buf.count+1, buf.count+2, buf.count+2, buf.count+1, buf.count+3);
           buf.count += 4;
         }
@@ -89,14 +200,26 @@ function buildChunkMesh(cx, cz) {
   }
 
   const group = new THREE.Group();
-  for (const type in buffers) {
-    const buf = buffers[type];
-    if (buf.pos.length === 0) continue;
+
+  if (opaque.pos.length > 0) {
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(buf.pos, 3));
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(buf.norm, 3));
-    geo.setIndex(buf.idx);
-    const mesh = new THREE.Mesh(geo, materials[type]);
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(opaque.pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(opaque.norm, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(opaque.uv, 2));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(opaque.color, 3));
+    geo.setIndex(opaque.idx);
+    const mesh = new THREE.Mesh(geo, blockMat);
+    group.add(mesh);
+  }
+
+  if (water.pos.length > 0) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(water.pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(water.norm, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(water.uv, 2));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(water.color, 3));
+    geo.setIndex(water.idx);
+    const mesh = new THREE.Mesh(geo, waterMat);
     group.add(mesh);
   }
 
@@ -131,13 +254,18 @@ function updateChunks(px, pz) {
   }
 }
 
+// ==== SKY ====
+const cloudMesh = createClouds(scene);
+const sunSprite = createSun(scene);
+
 // ==== PLAYER ====
 function findSpawn() {
   for (let r = 0; r < 400; r++) {
     const tx = 8 + (r % 40) - 20;
     const tz = 8 + Math.floor(r / 40) - 5;
     const h = world.heightAt(tx, tz);
-    if (h >= 9 && h <= 15) {
+    const biome = world.biomeAt(tx, tz);
+    if (h >= 10 && h <= 16 && biome !== BIOME.OCEAN) {
       return { x: tx + 0.5, y: h + 3, z: tz + 0.5 };
     }
   }
@@ -189,7 +317,6 @@ function inRect(t, el) {
 
 canvas.addEventListener('touchstart', e => {
   for (const t of e.changedTouches) {
-    // Tombol lompat?
     if (inRect(t, jumpBtn) && touch.jumpId === null) {
       touch.jumpId = t.identifier;
       jumpBtn.classList.add('active');
@@ -197,7 +324,6 @@ canvas.addEventListener('touchstart', e => {
       continue;
     }
 
-    // Joystick area (kiri bawah, di sekitar joyBase)?
     const jr = joyBase.getBoundingClientRect();
     const jcx = jr.left + jr.width / 2;
     const jcy = jr.top + jr.height / 2;
@@ -209,7 +335,6 @@ canvas.addEventListener('touchstart', e => {
       continue;
     }
 
-    // Sisanya = area look (swipe kanan / area kosong)
     if (touch.lookId === null) {
       touch.lookId = t.identifier;
       touch.lookLast = { x: t.clientX, y: t.clientY };
@@ -221,7 +346,6 @@ canvas.addEventListener('touchmove', e => {
   for (const t of e.changedTouches) {
     if (t.identifier === touch.moveId) {
       touch.moveCur = { x: t.clientX, y: t.clientY };
-
       const dx = touch.moveCur.x - touch.moveStart.x;
       const dy = touch.moveCur.y - touch.moveStart.y;
       const max = 50;
@@ -255,7 +379,7 @@ canvas.addEventListener('touchend', e => {
   }
 }, { passive: false });
 
-// ==== INFO PANEL ====
+// ==== INFO ====
 const infoX = document.getElementById('infoX');
 const infoY = document.getElementById('infoY');
 const infoZ = document.getElementById('infoZ');
@@ -296,10 +420,7 @@ function updatePlayer() {
     player.onGround = false;
   }
 
-  if (player.y < -10) {
-    player.y = 30;
-    player.vy = 0;
-  }
+  if (player.y < -10) { player.y = 30; player.vy = 0; }
 
   camera.position.set(player.x, player.y, player.z);
   camera.rotation.y = yaw;
@@ -316,6 +437,11 @@ updateChunks(player.x, player.z);
 function animate() {
   requestAnimationFrame(animate);
   updatePlayer();
+  // Awan bergerak pelan
+  cloudMesh.position.x = player.x;
+  cloudMesh.position.z = player.z;
+  cloudMesh.material.map.offset.x += 0.0003;
+  sunSprite.position.set(player.x + 150, 200, player.z - 150);
   renderer.render(scene, camera);
 }
 animate();
