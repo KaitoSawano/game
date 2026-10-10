@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { World, BLOCK, BIOME, CHUNK_H, SEA_LEVEL } from './world.js';
-import { generateAtlas, BLOCK_TILES, TILE_SIZE, ATLAS_COLS } from './textures.js';
+import { BLOCK_TEXTURES, getMaterial, getTintForBlock } from './textures.js';
 import { createClouds, createSun } from './sky.js';
 
 const canvas = document.getElementById('game');
@@ -19,23 +19,6 @@ scene.add(new THREE.AmbientLight(0xffffff, 0.85));
 const sunLight = new THREE.DirectionalLight(0xffffff, 0.6);
 sunLight.position.set(10, 30, 10);
 scene.add(sunLight);
-
-const atlasTex = generateAtlas();
-
-const blockMat = new THREE.MeshLambertMaterial({
-  map: atlasTex,
-  side: THREE.FrontSide,
-  vertexColors: true,
-});
-
-const waterMat = new THREE.MeshLambertMaterial({
-  map: atlasTex,
-  transparent: true,
-  opacity: 0.55,
-  side: THREE.FrontSide,
-  vertexColors: true,
-  depthWrite: false,
-});
 
 const world = new World(12345);
 const chunkMeshes = new Map();
@@ -83,7 +66,6 @@ const FACES = [
 function isTransparent(b) {
   return b === BLOCK.AIR || b === BLOCK.WATER;
 }
-
 function isSolid(b) {
   return b !== BLOCK.AIR && b !== BLOCK.WATER;
 }
@@ -97,16 +79,13 @@ function computeAO(gx, gy, gz, face, vi) {
   return 1.0 - (s1 + s2 + c) * 0.15;
 }
 
-function getTileUV(blockType, faceDir) {
-  const t = BLOCK_TILES[blockType];
-  if (!t) return { u0: 0, u1: 1 / ATLAS_COLS };
-  let tileIdx;
-  if (faceDir[1] === 1) tileIdx = t.top;
-  else if (faceDir[1] === -1) tileIdx = t.bottom;
-  else tileIdx = t.side;
-  const u0 = tileIdx / ATLAS_COLS;
-  const u1 = (tileIdx + 1) / ATLAS_COLS;
-  return { u0, u1 };
+// Dapatkan nama file texture untuk blok + face
+function getTextureFile(blockType, faceDir) {
+  const t = BLOCK_TEXTURES[blockType];
+  if (!t) return 'rock.png';
+  if (faceDir[1] === 1) return t.top;
+  if (faceDir[1] === -1) return t.bottom;
+  return t.side;
 }
 
 function buildChunkMesh(cx, cz) {
@@ -121,8 +100,17 @@ function buildChunkMesh(cx, cz) {
   const chunk = world.getChunk(cx, cz);
   const bx = cx * 16, bz = cz * 16;
 
-  const opaque = { pos: [], norm: [], uv: [], color: [], idx: [], count: 0 };
-  const water  = { pos: [], norm: [], uv: [], color: [], idx: [], count: 0 };
+  // Buffers per (filename + transparent flag)
+  // key: "filename_t" atau "filename"
+  const buffers = new Map();
+
+  function getBuf(filename, transparent) {
+    const key = filename + (transparent ? '_t' : '');
+    if (!buffers.has(key)) {
+      buffers.set(key, { filename, transparent, pos: [], norm: [], uv: [], color: [], idx: [], count: 0 });
+    }
+    return buffers.get(key);
+  }
 
   let maxY = 0;
   for (let x = 0; x < 16; x++) {
@@ -144,7 +132,7 @@ function buildChunkMesh(cx, cz) {
         if (b === BLOCK.AIR) continue;
 
         const isWater = b === BLOCK.WATER;
-        const buf = isWater ? water : opaque;
+        const tint = getTintForBlock(b);
 
         for (let fi = 0; fi < FACES.length; fi++) {
           const face = FACES[fi];
@@ -156,12 +144,15 @@ function buildChunkMesh(cx, cz) {
           if (!isTransparent(nb)) continue;
           if (isWater && face.dir[1] === -1) continue;
 
-          const { u0, u1 } = getTileUV(b, face.dir);
+          const filename = getTextureFile(b, face.dir);
+          const buf = getBuf(filename, isWater);
+
+          // UV: 0..1 (karena tiap PNG = satu blok penuh)
           const cornerUVs = [
-            [u0, 0],
-            [u1, 0],
-            [u1, 1],
-            [u0, 1],
+            [0, 0],
+            [1, 0],
+            [1, 1],
+            [0, 1],
           ];
 
           for (let vi = 0; vi < 4; vi++) {
@@ -169,7 +160,7 @@ function buildChunkMesh(cx, cz) {
             buf.pos.push(bx + x + c[0], y + c[1], bz + z + c[2]);
             buf.norm.push(...face.dir);
             const ao = computeAO(bx + x, y, bz + z, face, vi);
-            buf.color.push(ao, ao, ao);
+            buf.color.push(ao * tint[0], ao * tint[1], ao * tint[2]);
             buf.uv.push(cornerUVs[vi][0], cornerUVs[vi][1]);
           }
           buf.idx.push(buf.count, buf.count + 1, buf.count + 2);
@@ -182,26 +173,17 @@ function buildChunkMesh(cx, cz) {
 
   const group = new THREE.Group();
 
-  if (opaque.pos.length > 0) {
+  for (const buf of buffers.values()) {
+    if (buf.pos.length === 0) continue;
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(opaque.pos, 3));
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(opaque.norm, 3));
-    geo.setAttribute('uv', new THREE.Float32BufferAttribute(opaque.uv, 2));
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(opaque.color, 3));
-    geo.setIndex(opaque.idx);
-    const mesh = new THREE.Mesh(geo, blockMat);
-    group.add(mesh);
-  }
-
-  if (water.pos.length > 0) {
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(water.pos, 3));
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(water.norm, 3));
-    geo.setAttribute('uv', new THREE.Float32BufferAttribute(water.uv, 2));
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(water.color, 3));
-    geo.setIndex(water.idx);
-    const mesh = new THREE.Mesh(geo, waterMat);
-    mesh.renderOrder = 2;
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(buf.pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(buf.norm, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(buf.uv, 2));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(buf.color, 3));
+    geo.setIndex(buf.idx);
+    const mat = getMaterial(buf.filename, buf.transparent);
+    const mesh = new THREE.Mesh(geo, mat);
+    if (buf.transparent) mesh.renderOrder = 2;
     group.add(mesh);
   }
 
@@ -283,13 +265,6 @@ function findSpawn() {
     }
   }
   if (best) return best;
-
-  for (let r = 0; r < 5000; r++) {
-    const tx = (r % 200) - 100;
-    const tz = Math.floor(r / 200) - 12;
-    const h = world.heightAt(tx, tz);
-    if (h > SEA_LEVEL + 2) return { x: tx + 0.5, y: h + 3, z: tz + 0.5 };
-  }
   return { x: 8, y: 30, z: 8 };
 }
 
