@@ -28,23 +28,21 @@ const blockMat = new THREE.MeshLambertMaterial({
   vertexColors: true,
 });
 
+// Air: transparan, tidak menulis depth, render setelah opaque
 const waterMat = new THREE.MeshLambertMaterial({
   map: atlasTex,
   transparent: true,
-  opacity: 0.75,
+  opacity: 0.65,
   side: THREE.DoubleSide,
   vertexColors: true,
+  depthWrite: false,
 });
 
 const world = new World(12345);
 const chunkMeshes = new Map();
 const RENDER_DISTANCE = 3;
 
-// ==== FACE DEFINITIONS ====
-// corners: 4 titik sudut, urutan CCW dilihat DARI LUAR
-// ao: 8 tetangga per vertex untuk ambient occlusion
 const FACES = [
-  // +X (kanan)
   {
     dir: [1, 0, 0],
     corners: [[1,0,0],[1,0,1],[1,1,1],[1,1,0]],
@@ -55,7 +53,6 @@ const FACES = [
       { side1: [1,1,0],  side2: [1,0,-1], corner: [1,1,-1]  },
     ],
   },
-  // -X (kiri)
   {
     dir: [-1, 0, 0],
     corners: [[0,0,1],[0,0,0],[0,1,0],[0,1,1]],
@@ -66,7 +63,6 @@ const FACES = [
       { side1: [-1,1,0],  side2: [-1,0,1],  corner: [-1,1,1]   },
     ],
   },
-  // +Y (atas)
   {
     dir: [0, 1, 0],
     corners: [[0,1,1],[1,1,1],[1,1,0],[0,1,0]],
@@ -77,7 +73,6 @@ const FACES = [
       { side1: [-1,1,-1], side2: [0,1,-1], corner: [-1,1,-1] },
     ],
   },
-  // -Y (bawah)
   {
     dir: [0, -1, 0],
     corners: [[0,0,0],[1,0,0],[1,0,1],[0,0,1]],
@@ -88,7 +83,6 @@ const FACES = [
       { side1: [-1,-1,0], side2: [0,-1,1],  corner: [-1,-1,1]  },
     ],
   },
-  // +Z (depan)
   {
     dir: [0, 0, 1],
     corners: [[0,0,1],[1,0,1],[1,1,1],[0,1,1]],
@@ -99,7 +93,6 @@ const FACES = [
       { side1: [-1,0,1], side2: [0,1,1],  corner: [-1,1,1]  },
     ],
   },
-  // -Z (belakang)
   {
     dir: [0, 0, -1],
     corners: [[1,0,0],[0,0,0],[0,1,0],[1,1,0]],
@@ -144,7 +137,12 @@ function getTileUV(blockType, faceDir) {
 
 function buildChunkMesh(cx, cz) {
   const key = `${cx},${cz}`;
-  if (chunkMeshes.has(key)) return;
+  if (chunkMeshes.has(key)) {
+    const old = chunkMeshes.get(key);
+    scene.remove(old);
+    old.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+    chunkMeshes.delete(key);
+  }
 
   const chunk = world.getChunk(cx, cz);
   const bx = cx * 16, bz = cz * 16;
@@ -172,7 +170,6 @@ function buildChunkMesh(cx, cz) {
 
           const { u0, u1 } = getTileUV(b, face.dir);
 
-          // UV: v=0 di atas, v=1 di bawah (karena atlas flipY=false)
           const cornerUVs = [
             [u0, 0],
             [u1, 0],
@@ -191,7 +188,6 @@ function buildChunkMesh(cx, cz) {
             buf.uv.push(cornerUVs[vi][0], cornerUVs[vi][1]);
           }
 
-          // Urutan segitiga KONSISTEN: 0-1-2 dan 0-2-3
           buf.idx.push(buf.count, buf.count + 1, buf.count + 2);
           buf.idx.push(buf.count, buf.count + 2, buf.count + 3);
           buf.count += 4;
@@ -210,6 +206,7 @@ function buildChunkMesh(cx, cz) {
     geo.setAttribute('color', new THREE.Float32BufferAttribute(opaque.color, 3));
     geo.setIndex(opaque.idx);
     const mesh = new THREE.Mesh(geo, blockMat);
+    mesh.renderOrder = 1;
     group.add(mesh);
   }
 
@@ -221,6 +218,7 @@ function buildChunkMesh(cx, cz) {
     geo.setAttribute('color', new THREE.Float32BufferAttribute(water.color, 3));
     geo.setIndex(water.idx);
     const mesh = new THREE.Mesh(geo, waterMat);
+    mesh.renderOrder = 2;
     group.add(mesh);
   }
 
@@ -259,12 +257,12 @@ const cloudMesh = createClouds(scene);
 const sunSprite = createSun(scene);
 
 function findSpawn() {
-  for (let r = 0; r < 400; r++) {
-    const tx = 8 + (r % 40) - 20;
-    const tz = 8 + Math.floor(r / 40) - 5;
+  for (let r = 0; r < 2000; r++) {
+    const tx = 8 + (r % 100) - 50;
+    const tz = 8 + Math.floor(r / 100) - 5;
     const h = world.heightAt(tx, tz);
     const biome = world.biomeAt(tx, tz);
-    if (h >= 10 && h <= 16 && biome !== BIOME.OCEAN) {
+    if (h >= 12 && h <= 16 && (biome === BIOME.PLAINS || biome === BIOME.FOREST)) {
       return { x: tx + 0.5, y: h + 3, z: tz + 0.5 };
     }
   }
@@ -297,16 +295,56 @@ function collidesAt(x, z) {
   return false;
 }
 
+// ==== RAYCAST ====
+function raycastBlock(maxDist = 6) {
+  const origin = new THREE.Vector3(player.x, player.y, player.z);
+  const dir = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation).normalize();
+
+  const step = 0.05;
+  let prev = null;
+  for (let t = 0; t < maxDist; t += step) {
+    const px = Math.floor(origin.x + dir.x * t);
+    const py = Math.floor(origin.y + dir.y * t);
+    const pz = Math.floor(origin.z + dir.z * t);
+    const b = world.getBlockGlobal(px, py, pz);
+    if (b !== BLOCK.AIR && b !== BLOCK.WATER) {
+      return { x: px, y: py, z: pz, prev };
+    }
+    prev = { x: px, y: py, z: pz };
+  }
+  return null;
+}
+
+// ==== INPUT ====
 const touch = {
-  moveId: null, lookId: null, jumpId: null,
+  moveId: null, lookId: null, jumpId: null, tapId: null,
   moveStart: { x: 0, y: 0 }, moveCur: { x: 0, y: 0 },
   lookLast: { x: 0, y: 0 },
+  tapStartTime: 0, tapStart: { x: 0, y: 0 }, tapMoved: false,
 };
 let yaw = 0, pitch = 0;
 
 const joyBase = document.getElementById('joyBase');
 const joyKnob = document.getElementById('joyKnob');
 const jumpBtn = document.getElementById('jumpBtn');
+
+// Hotbar
+let selectedBlock = BLOCK.GRASS;
+const slotEls = document.querySelectorAll('.slot');
+const blockBySlot = {
+  1: BLOCK.GRASS,
+  2: BLOCK.DIRT,
+  3: BLOCK.STONE,
+  4: BLOCK.SAND,
+  5: BLOCK.WOOD,
+};
+function updateHotbarSelection() {
+  slotEls.forEach(el => {
+    const slotNum = parseInt(el.dataset.block);
+    if (blockBySlot[slotNum] === selectedBlock) el.classList.add('selected');
+    else el.classList.remove('selected');
+  });
+}
 
 function inRect(t, el) {
   const r = el.getBoundingClientRect();
@@ -315,6 +353,18 @@ function inRect(t, el) {
 
 canvas.addEventListener('touchstart', e => {
   for (const t of e.changedTouches) {
+    // Hotbar?
+    let handled = false;
+    slotEls.forEach(el => {
+      if (inRect(t, el)) {
+        const slotNum = parseInt(el.dataset.block);
+        selectedBlock = blockBySlot[slotNum];
+        updateHotbarSelection();
+        handled = true;
+      }
+    });
+    if (handled) continue;
+
     if (inRect(t, jumpBtn) && touch.jumpId === null) {
       touch.jumpId = t.identifier;
       jumpBtn.classList.add('active');
@@ -333,9 +383,14 @@ canvas.addEventListener('touchstart', e => {
       continue;
     }
 
+    // Area kosong = look + tap untuk interaksi
     if (touch.lookId === null) {
       touch.lookId = t.identifier;
       touch.lookLast = { x: t.clientX, y: t.clientY };
+      touch.tapId = t.identifier;
+      touch.tapStartTime = performance.now();
+      touch.tapStart = { x: t.clientX, y: t.clientY };
+      touch.tapMoved = false;
     }
   }
 }, { passive: false });
@@ -354,6 +409,7 @@ canvas.addEventListener('touchmove', e => {
     } else if (t.identifier === touch.lookId) {
       const dx = t.clientX - touch.lookLast.x;
       const dy = t.clientY - touch.lookLast.y;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) touch.tapMoved = true;
       yaw -= dx * 0.005;
       pitch -= dy * 0.005;
       pitch = Math.max(-1.5, Math.min(1.5, pitch));
@@ -369,7 +425,15 @@ canvas.addEventListener('touchend', e => {
       joyKnob.style.left = '50%';
       joyKnob.style.top = '50%';
     }
-    if (t.identifier === touch.lookId) touch.lookId = null;
+    if (t.identifier === touch.lookId) {
+      // Cek apakah ini tap (bukan swipe)
+      const dur = performance.now() - touch.tapStartTime;
+      if (!touch.tapMoved && dur < 400 && t.identifier === touch.tapId) {
+        handleTap();
+      }
+      touch.lookId = null;
+      touch.tapId = null;
+    }
     if (t.identifier === touch.jumpId) {
       touch.jumpId = null;
       jumpBtn.classList.remove('active');
@@ -377,6 +441,14 @@ canvas.addEventListener('touchend', e => {
   }
 }, { passive: false });
 
+function handleTap() {
+  const hit = raycastBlock(6);
+  if (!hit) return;
+  // Tap = hancurkan blok
+  world.setBlockGlobal(hit.x, hit.y, hit.z, BLOCK.AIR);
+}
+
+// ==== INFO ====
 const infoX = document.getElementById('infoX');
 const infoY = document.getElementById('infoY');
 const infoZ = document.getElementById('infoZ');
@@ -388,6 +460,16 @@ function updateInfo() {
   infoZ.textContent = player.z.toFixed(0);
 }
 
+// ==== UPDATE ====
+let lastRebuildCheck = 0;
+function rebuildDirtyChunks() {
+  const dirty = world.consumeDirty();
+  for (const key of dirty) {
+    const [cx, cz] = key.split(',').map(Number);
+    buildChunkMesh(cx, cz);
+  }
+}
+
 function updatePlayer() {
   if (touch.moveId !== null) {
     const dx = touch.moveCur.x - touch.moveStart.x;
@@ -396,53 +478,4 @@ function updatePlayer() {
     const strafe = dx / 80;
     const sin = Math.sin(yaw), cos = Math.cos(yaw);
 
-    const nx = player.x + (-sin * forward + cos * strafe) * SPEED;
-    const nz = player.z + (-cos * forward - sin * strafe) * SPEED;
-
-    if (!collidesAt(nx, player.z)) player.x = nx;
-    if (!collidesAt(player.x, nz)) player.z = nz;
-  }
-
-  player.vy -= GRAVITY;
-  player.vy = Math.max(player.vy, -0.6);
-  player.y += player.vy;
-
-  const feetY = Math.floor(player.y - EYE);
-  if (isSolidAt(player.x, feetY, player.z)) {
-    player.y = feetY + 1 + EYE;
-    player.vy = 0;
-    player.onGround = true;
-  } else {
-    player.onGround = false;
-  }
-
-  if (player.y < -10) { player.y = 30; player.vy = 0; }
-
-  camera.position.set(player.x, player.y, player.z);
-  camera.rotation.y = yaw;
-  camera.rotation.x = pitch;
-
-  updateChunks(player.x, player.z);
-
-  infoTimer++;
-  if (infoTimer % 10 === 0) updateInfo();
-}
-
-updateChunks(player.x, player.z);
-
-function animate() {
-  requestAnimationFrame(animate);
-  updatePlayer();
-  cloudMesh.position.x = player.x;
-  cloudMesh.position.z = player.z;
-  cloudMesh.material.map.offset.x += 0.0003;
-  sunSprite.position.set(player.x + 150, 200, player.z - 150);
-  renderer.render(scene, camera);
-}
-animate();
-
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
+    const nx = player
