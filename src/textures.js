@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 export const TILE_SIZE = 16;
-export const ATLAS_COLS = 32;
+export const ATLAS_COLS = 16;
 
 export const BLOCK_TILES = {
   1:  { top: 0,  side: 1,  bottom: 2  },
@@ -153,7 +153,10 @@ export function generateAtlas() {
   canvas.width = ATLAS_COLS * TILE_SIZE;
   canvas.height = TILE_SIZE;
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Isi background pink (debug) — kalau ada tile kosong, kelihatan pink
+  ctx.fillStyle = '#ff00ff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   for (const tileIdx in TILE_DRAWERS) {
     const x0 = parseInt(tileIdx) * TILE_SIZE;
@@ -165,5 +168,8 @@ export function generateAtlas() {
   tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.flipY = false;
   return tex;
 }
