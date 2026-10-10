@@ -20,7 +20,6 @@ scene.add(sun);
 
 const world = new World(12345);
 
-// Warna per tipe blok
 const COLORS = {
   [BLOCK.GRASS]: 0x4caf50,
   [BLOCK.DIRT]:  0x8b5a2b,
@@ -35,6 +34,8 @@ const materials = {};
 for (const k in COLORS) {
   materials[k] = new THREE.MeshLambertMaterial({ color: COLORS[k] });
 }
+materials[BLOCK.WATER].transparent = true;
+materials[BLOCK.WATER].opacity = 0.7;
 
 const chunkMeshes = new Map();
 const RENDER_DISTANCE = 3;
@@ -59,8 +60,7 @@ function buildChunkMesh(cx, cz) {
   const chunk = world.getChunk(cx, cz);
   const bx = cx * 16, bz = cz * 16;
 
-  // Kumpulkan mesh per material
-  const buffers = {}; // blockType → {pos, norm, idx}
+  const buffers = {};
 
   for (let x = 0; x < 16; x++) {
     for (let y = 0; y < CHUNK_H; y++) {
@@ -77,7 +77,6 @@ function buildChunkMesh(cx, cz) {
           const nz = bz + z + face.dir[2];
           const nb = world.getBlockGlobal(nx, ny, nz);
 
-          // Skip kalau tetangga solid (kecuali air, biar kelihatan)
           if (!isTransparent(nb)) continue;
 
           for (const c of face.corners) {
@@ -100,10 +99,6 @@ function buildChunkMesh(cx, cz) {
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(buf.norm, 3));
     geo.setIndex(buf.idx);
     const mesh = new THREE.Mesh(geo, materials[type]);
-    if (parseInt(type) === BLOCK.WATER) {
-      mesh.material.transparent = true;
-      mesh.material.opacity = 0.7;
-    }
     group.add(mesh);
   }
 
@@ -139,8 +134,16 @@ function updateChunks(px, pz) {
 }
 
 // ==== KONTROL ====
-const touch = { moveId: null, lookId: null, moveStart: {x:0,y:0}, moveCur: {x:0,y:0}, lookLast: {x:0,y:0} };
+const touch = {
+  moveId: null, lookId: null,
+  moveStart: { x: 0, y: 0 }, moveCur: { x: 0, y: 0 },
+  lookLast: { x: 0, y: 0 },
+  lookStartTime: 0, lookMoved: false,
+};
 let yaw = 0, pitch = 0;
+
+const joyBase = document.getElementById('joyBase');
+const joyKnob = document.getElementById('joyKnob');
 
 canvas.addEventListener('touchstart', e => {
   for (const t of e.changedTouches) {
@@ -148,9 +151,18 @@ canvas.addEventListener('touchstart', e => {
       touch.moveId = t.identifier;
       touch.moveStart = { x: t.clientX, y: t.clientY };
       touch.moveCur = { x: t.clientX, y: t.clientY };
+
+      // Tampilkan joystick di lokasi sentuh
+      joyBase.style.left = (t.clientX - 70) + 'px';
+      joyBase.style.top = (t.clientY - 70) + 'px';
+      joyBase.style.display = 'block';
+      joyKnob.style.left = '50%';
+      joyKnob.style.top = '50%';
     } else if (t.clientX >= innerWidth / 2 && touch.lookId === null) {
       touch.lookId = t.identifier;
       touch.lookLast = { x: t.clientX, y: t.clientY };
+      touch.lookStartTime = performance.now();
+      touch.lookMoved = false;
     }
   }
 }, { passive: false });
@@ -159,9 +171,18 @@ canvas.addEventListener('touchmove', e => {
   for (const t of e.changedTouches) {
     if (t.identifier === touch.moveId) {
       touch.moveCur = { x: t.clientX, y: t.clientY };
+
+      const dx = touch.moveCur.x - touch.moveStart.x;
+      const dy = touch.moveCur.y - touch.moveStart.y;
+      const max = 50;
+      const len = Math.min(Math.hypot(dx, dy), max);
+      const ang = Math.atan2(dy, dx);
+      joyKnob.style.left = (50 + Math.cos(ang) * len * 0.7) + '%';
+      joyKnob.style.top = (50 + Math.sin(ang) * len * 0.7) + '%';
     } else if (t.identifier === touch.lookId) {
       const dx = t.clientX - touch.lookLast.x;
       const dy = t.clientY - touch.lookLast.y;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) touch.lookMoved = true;
       yaw -= dx * 0.005;
       pitch -= dy * 0.005;
       pitch = Math.max(-1.5, Math.min(1.5, pitch));
@@ -172,21 +193,27 @@ canvas.addEventListener('touchmove', e => {
 
 canvas.addEventListener('touchend', e => {
   for (const t of e.changedTouches) {
-    if (t.identifier === touch.moveId) touch.moveId = null;
-    if (t.identifier === touch.lookId) touch.lookId = null;
+    if (t.identifier === touch.moveId) {
+      touch.moveId = null;
+      joyBase.style.display = 'none';
+    }
+    if (t.identifier === touch.lookId) {
+      touch.lookId = null;
+    }
   }
 }, { passive: false });
 
 // ==== PLAYER ====
-// Cari posisi spawn di atas tanah
 function findSpawn() {
-  for (let y = CHUNK_H - 1; y > 0; y--) {
-    const b = world.getBlockGlobal(8, y, 8);
-    if (b !== BLOCK.AIR && b !== BLOCK.WATER) {
-      return { x: 8, y: y + 2, z: 8 };
+  for (let r = 0; r < 400; r++) {
+    const tx = 8 + (r % 40) - 20;
+    const tz = 8 + Math.floor(r / 40) - 5;
+    const h = world.heightAt(tx, tz);
+    if (h >= 9 && h <= 15) {
+      return { x: tx + 0.5, y: h + 3, z: tz + 0.5 };
     }
   }
-  return { x: 8, y: 20, z: 8 };
+  return { x: 8, y: 30, z: 8 };
 }
 
 const spawn = findSpawn();
@@ -195,10 +222,24 @@ const player = { x: spawn.x, y: spawn.y, z: spawn.z, vy: 0, onGround: false };
 const SPEED = 0.15;
 const GRAVITY = 0.015;
 const EYE = 1.6;
+const PLAYER_RADIUS = 0.3;
 
 function isSolidAt(gx, gy, gz) {
   const b = world.getBlockGlobal(Math.floor(gx), Math.floor(gy), Math.floor(gz));
   return b !== BLOCK.AIR && b !== BLOCK.WATER;
+}
+
+// Cek apakah player di posisi (x,z) menabrak blok solid
+function collidesAt(x, z) {
+  const feetY = Math.floor(player.y - EYE);
+  const headY = Math.floor(player.y - 0.1);
+  for (let y = feetY; y <= headY; y++) {
+    if (isSolidAt(x - PLAYER_RADIUS, y, z - PLAYER_RADIUS)) return true;
+    if (isSolidAt(x + PLAYER_RADIUS, y, z - PLAYER_RADIUS)) return true;
+    if (isSolidAt(x - PLAYER_RADIUS, y, z + PLAYER_RADIUS)) return true;
+    if (isSolidAt(x + PLAYER_RADIUS, y, z + PLAYER_RADIUS)) return true;
+  }
+  return false;
 }
 
 function updatePlayer() {
@@ -209,28 +250,33 @@ function updatePlayer() {
     const forward = -dy / 80;
     const strafe = dx / 80;
     const sin = Math.sin(yaw), cos = Math.cos(yaw);
-    player.x += (-sin * forward + cos * strafe) * SPEED;
-    player.z += (-cos * forward - sin * strafe) * SPEED;
+
+    const nx = player.x + (-sin * forward + cos * strafe) * SPEED;
+    const nz = player.z + (-cos * forward - sin * strafe) * SPEED;
+
+    // Cek collision horizontal
+    if (!collidesAt(nx, player.z)) player.x = nx;
+    if (!collidesAt(player.x, nz)) player.z = nz;
   }
 
   // Gravity
   player.vy -= GRAVITY;
-  player.vy = Math.max(player.vy, -0.5); // terminal velocity
+  player.vy = Math.max(player.vy, -0.5);
   player.y += player.vy;
 
-  // Collision: cek kaki
-  const feetY = player.y - EYE;
+  // Collision vertikal
+  const feetY = Math.floor(player.y - EYE);
   if (isSolidAt(player.x, feetY, player.z)) {
-    player.y = Math.floor(feetY) + 1 + EYE;
+    player.y = feetY + 1 + EYE;
     player.vy = 0;
     player.onGround = true;
   } else {
     player.onGround = false;
   }
 
-  // Jangan jatuh ke void
   if (player.y < -10) {
-    player.y = 30; player.vy = 0;
+    player.y = 30;
+    player.vy = 0;
   }
 
   camera.position.set(player.x, player.y, player.z);
