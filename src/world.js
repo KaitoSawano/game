@@ -47,6 +47,7 @@ export class World {
   constructor(seed = 12345) {
     this.seed = seed;
     this.chunks = new Map();
+    this.dirtyChunks = new Set();
   }
 
   key(cx, cz) { return `${cx},${cz}`; }
@@ -68,6 +69,36 @@ export class World {
     const lx = ((gx % 16) + 16) % 16;
     const lz = ((gz % 16) + 16) % 16;
     return this.getChunk(cx, cz).get(lx, gy, lz);
+  }
+
+  setBlockGlobal(gx, gy, gz, v) {
+    if (gy < 0 || gy >= CHUNK_H) return false;
+    const cx = Math.floor(gx / 16);
+    const cz = Math.floor(gz / 16);
+    const lx = ((gx % 16) + 16) % 16;
+    const lz = ((gz % 16) + 16) % 16;
+    const chunk = this.getChunk(cx, cz);
+    if (chunk.get(lx, gy, lz) === v) return false;
+    chunk.set(lx, gy, lz, v);
+
+    // Tandai chunk ini + tetangga sebagai dirty (perlu rebuild mesh)
+    this.markDirty(cx, cz);
+    // Kalau di pinggir chunk, tandai tetangga
+    if (lx === 0) this.markDirty(cx - 1, cz);
+    if (lx === 15) this.markDirty(cx + 1, cz);
+    if (lz === 0) this.markDirty(cx, cz - 1);
+    if (lz === 15) this.markDirty(cx, cz + 1);
+    return true;
+  }
+
+  markDirty(cx, cz) {
+    this.dirtyChunks.add(this.key(cx, cz));
+  }
+
+  consumeDirty() {
+    const dirty = [...this.dirtyChunks];
+    this.dirtyChunks.clear();
+    return dirty;
   }
 
   heightAt(gx, gz) {
@@ -145,6 +176,7 @@ export class World {
       }
     }
 
+    // Vegetasi: hanya di area tengah chunk
     for (let x = 5; x <= 11; x++) {
       for (let z = 5; z <= 11; z++) {
         const gx = cx * 16 + x;
@@ -156,13 +188,13 @@ export class World {
         const r = hash(gx * 7, gz * 13);
 
         if (biome === BIOME.FOREST) {
-          if (r > 0.90) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
+          if (r > 0.85) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
         } else if (biome === BIOME.PLAINS) {
-          if (r > 0.97) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
+          if (r > 0.94) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
         } else if (biome === BIOME.DESERT) {
-          if (r > 0.96) this.placeCactus(chunk, x, h + 1, z);
+          if (r > 0.94) this.placeCactus(chunk, x, h + 1, z);
         } else if (biome === BIOME.SNOW) {
-          if (r > 0.94) this.placeTree(chunk, x, h + 1, z, BLOCK.BIRCH_WOOD, BLOCK.BIRCH_LEAVES);
+          if (r > 0.90) this.placeTree(chunk, x, h + 1, z, BLOCK.BIRCH_WOOD, BLOCK.BIRCH_LEAVES);
         }
       }
     }
