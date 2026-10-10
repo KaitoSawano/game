@@ -178,6 +178,7 @@ export class World {
       }
     }
 
+    // Vegetasi: lebih jarang supaya tidak jadi hutan beton
     for (let x = 2; x <= 13; x++) {
       for (let z = 2; z <= 13; z++) {
         const gx = cx * 16 + x;
@@ -190,28 +191,28 @@ export class World {
         const r = hash(gx * 7, gz * 13);
 
         if (biome === BIOME.FOREST) {
-          if (r > 0.78) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
+          if (r > 0.88) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
         } else if (biome === BIOME.PLAINS) {
-          if (r > 0.92) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
+          if (r > 0.96) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
         } else if (biome === BIOME.DESERT) {
-          if (r > 0.92) this.placeCactus(chunk, x, h + 1, z);
+          if (r > 0.96) this.placeCactus(chunk, x, h + 1, z);
         } else if (biome === BIOME.SNOW) {
-          if (r > 0.88) this.placeTree(chunk, x, h + 1, z, BLOCK.BIRCH_WOOD, BLOCK.BIRCH_LEAVES);
+          if (r > 0.94) this.placeTree(chunk, x, h + 1, z, BLOCK.BIRCH_WOOD, BLOCK.BIRCH_LEAVES);
         }
       }
     }
   }
 
   placeTree(chunk, x, y, z, woodBlock, leafBlock) {
-    const trunkH = 4 + Math.floor(hash(x * 3, z * 5) * 3);
+    const trunkH = 3 + Math.floor(hash(x * 3, z * 5) * 3);
     for (let i = 0; i < trunkH; i++) {
       if (y + i < CHUNK_H) chunk.set(x, y + i, z, woodBlock);
     }
     const topY = y + trunkH;
-    for (let dx = -2; dx <= 2; dx++) {
-      for (let dz = -2; dz <= 2; dz++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
         for (let dy = -1; dy <= 1; dy++) {
-          if (Math.abs(dx) === 2 && Math.abs(dz) === 2 && dy !== 0) continue;
+          if (Math.abs(dx) === 1 && Math.abs(dz) === 1 && dy !== 0) continue;
           const lx = x + dx, lz = z + dz, ly = topY + dy;
           if (lx < 0 || lx > 15 || lz < 0 || lz > 15) continue;
           if (ly < 0 || ly >= CHUNK_H) continue;
