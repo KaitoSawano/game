@@ -1,0 +1,6 @@
+{
+  "appId": "com.kaitosawano.game",
+  "appName": "VoxelGame",
+  "webDir": ".",
+  "bundledWebRuntime": false
+}
