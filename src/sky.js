@@ -1,14 +1,12 @@
 import * as THREE from 'three';
 
 export function createClouds(scene) {
-  // Awan: plane besar dengan texture prosedural transparan
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 256;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, 256, 256);
 
-  // Blok-blok awan
   let s = 42;
   const rng = () => {
     s = (s * 9301 + 49297) % 233280;
@@ -29,6 +27,7 @@ export function createClouds(scene) {
   tex.repeat.set(4, 4);
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
 
   const geo = new THREE.PlaneGeometry(600, 600);
   const mat = new THREE.MeshBasicMaterial({
@@ -42,18 +41,15 @@ export function createClouds(scene) {
   cloud.rotation.x = -Math.PI / 2;
   cloud.position.y = 60;
   scene.add(cloud);
-
   return cloud;
 }
 
 export function createSun(scene) {
-  // Matahari: sprite kuning sederhana
   const canvas = document.createElement('canvas');
   canvas.width = 64;
   canvas.height = 64;
   const ctx = canvas.getContext('2d');
 
-  // Glow
   const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
   grad.addColorStop(0, 'rgba(255,255,200,1)');
   grad.addColorStop(0.5, 'rgba(255,230,120,0.8)');
@@ -62,11 +58,11 @@ export function createSun(scene) {
   ctx.fillRect(0, 0, 64, 64);
 
   const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.SpriteMaterial({ map: tex, depthWrite: false, fog: false });
   const sun = new THREE.Sprite(mat);
   sun.scale.set(40, 40, 1);
   sun.position.set(150, 200, -150);
   scene.add(sun);
-
   return sun;
 }
