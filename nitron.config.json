@@ -1,0 +1,8 @@
+{
+  "name": "MyGame",
+  "packageId": "com.yourname.mygame",
+  "entry": "index.html",
+  "orientation": "portrait",
+  "output": "dist/app.apk",
+  "permissions": []
+}
