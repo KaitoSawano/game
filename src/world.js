@@ -1,9 +1,12 @@
 import { Chunk } from './chunk.js';
 
+// ==== HASH YANG BENAR (bekerja untuk koordinat negatif) ====
 function hash(x, z) {
-  let h = x * 374761393 + z * 668265263;
-  h = (h ^ (h >> 13)) * 1274126177;
-  return ((h ^ (h >> 16)) >>> 0) / 4294967295;
+  // Integer hash yang stabil untuk negatif
+  let h = Math.imul(x | 0, 374761393) + Math.imul(z | 0, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h = h ^ (h >>> 16);
+  return (h >>> 0) / 4294967295;
 }
 
 function smooth(t) { return t * t * (3 - 2 * t); }
@@ -42,6 +45,7 @@ export const BIOME = {
 };
 
 export const CHUNK_H = 64;
+export const SEA_LEVEL = 10;
 
 export class World {
   constructor(seed = 12345) {
@@ -81,9 +85,7 @@ export class World {
     if (chunk.get(lx, gy, lz) === v) return false;
     chunk.set(lx, gy, lz, v);
 
-    // Tandai chunk ini + tetangga sebagai dirty (perlu rebuild mesh)
     this.markDirty(cx, cz);
-    // Kalau di pinggir chunk, tandai tetangga
     if (lx === 0) this.markDirty(cx - 1, cz);
     if (lx === 15) this.markDirty(cx + 1, cz);
     if (lz === 0) this.markDirty(cx, cz - 1);
@@ -101,30 +103,39 @@ export class World {
     return dirty;
   }
 
+  // ==== HEIGHT: sekarang pakai BENAR-BENAR noise ====
   heightAt(gx, gz) {
-    const sx = (gx + this.seed) * 0.01;
-    const sz = (gz + this.seed) * 0.01;
-    const base = fbm(sx, sz, 3);
-    const mountain = fbm(sx * 0.25 + 100, sz * 0.25 + 100, 2);
+    const s = this.seed;
+    // Benua: skala besar, menentukan daratan vs laut
+    const continent = fbm((gx + s) * 0.003, (gz + s) * 0.003, 3);
+    // Bukit: skala sedang
+    const hills = fbm((gx + s) * 0.015, (gz + s) * 0.015, 3);
+    // Gunung: skala kecil, jarang
+    const mountain = fbm((gx + s * 3) * 0.008, (gz + s * 3) * 0.008, 4);
 
-    let h = 11 + base * 6;
-    if (mountain > 0.75) {
-      h += (mountain - 0.75) * 60;
+    // Base dari kontinen: 4..14 (bisa di bawah sea level)
+    let h = 4 + continent * 10;
+    // Tambah bukit: -2..+2
+    h += (hills - 0.5) * 4;
+    // Gunung: kalau mountain tinggi, tambah besar
+    if (mountain > 0.6) {
+      h += (mountain - 0.6) * 80;
     }
     return Math.floor(h);
   }
 
   biomeAt(gx, gz) {
-    const temp = fbm((gx + this.seed) * 0.004, (gz + this.seed) * 0.004, 2);
-    const humid = fbm((gx + this.seed * 2) * 0.005, (gz + this.seed * 2) * 0.005, 2);
+    const s = this.seed;
+    const temp = fbm((gx + s) * 0.002, (gz + s) * 0.002, 2);
+    const humid = fbm((gx + s * 2) * 0.002, (gz + s * 2) * 0.002, 2);
     const h = this.heightAt(gx, gz);
 
-    if (h < 10) return BIOME.OCEAN;
-    if (h < 11) return BIOME.BEACH;
-    if (h > 28) return BIOME.MOUNTAIN;
+    if (h < SEA_LEVEL - 1) return BIOME.OCEAN;
+    if (h < SEA_LEVEL + 1) return BIOME.BEACH;
+    if (h > 30) return BIOME.MOUNTAIN;
 
     if (temp < 0.3) return BIOME.SNOW;
-    if (temp > 0.7 && humid < 0.35) return BIOME.DESERT;
+    if (temp > 0.7 && humid < 0.4) return BIOME.DESERT;
     if (humid > 0.6) return BIOME.FOREST;
     return BIOME.PLAINS;
   }
@@ -149,7 +160,7 @@ export class World {
             surface = BLOCK.SAND; subsurface = BLOCK.SAND; deep = BLOCK.STONE;
             break;
           case BIOME.MOUNTAIN:
-            surface = h > 32 ? BLOCK.SNOW : BLOCK.STONE;
+            surface = h > 35 ? BLOCK.SNOW : BLOCK.STONE;
             subsurface = BLOCK.STONE; deep = BLOCK.STONE;
             break;
           case BIOME.OCEAN:
@@ -159,6 +170,7 @@ export class World {
             surface = BLOCK.GRASS; subsurface = BLOCK.DIRT; deep = BLOCK.STONE;
         }
 
+        // Isi tanah sampai h
         for (let y = 0; y <= h; y++) {
           let block;
           if (y === h) block = surface;
@@ -167,34 +179,39 @@ export class World {
           chunk.set(x, y, z, block);
         }
 
-        if (h < 10) {
-          for (let y = h + 1; y <= 9; y++) {
-            if (y === 9 && biome === BIOME.SNOW) chunk.set(x, y, z, BLOCK.ICE);
+        // Isi air dari h+1 sampai SEA_LEVEL kalau h < SEA_LEVEL
+        if (h < SEA_LEVEL) {
+          for (let y = h + 1; y <= SEA_LEVEL; y++) {
+            if (y === SEA_LEVEL && biome === BIOME.SNOW) chunk.set(x, y, z, BLOCK.ICE);
             else chunk.set(x, y, z, BLOCK.WATER);
           }
         }
       }
     }
 
-    // Vegetasi: hanya di area tengah chunk
-    for (let x = 5; x <= 11; x++) {
-      for (let z = 5; z <= 11; z++) {
+    // ==== VEGETASI ====
+    // Loop seluruh chunk (bukan cuma tengah) supaya pohon lebih banyak
+    for (let x = 2; x <= 13; x++) {
+      for (let z = 2; z <= 13; z++) {
         const gx = cx * 16 + x;
         const gz = cz * 16 + z;
         const h = this.heightAt(gx, gz);
         const biome = this.biomeAt(gx, gz);
-        if (h < 11 || h > 28) continue;
+        // Jangan tanam di air
+        if (h <= SEA_LEVEL) continue;
+        // Jangan tanam di gunung tinggi
+        if (h > 30) continue;
 
         const r = hash(gx * 7, gz * 13);
 
         if (biome === BIOME.FOREST) {
-          if (r > 0.85) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
+          if (r > 0.75) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
         } else if (biome === BIOME.PLAINS) {
-          if (r > 0.94) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
+          if (r > 0.90) this.placeTree(chunk, x, h + 1, z, BLOCK.WOOD, BLOCK.LEAVES);
         } else if (biome === BIOME.DESERT) {
-          if (r > 0.94) this.placeCactus(chunk, x, h + 1, z);
+          if (r > 0.90) this.placeCactus(chunk, x, h + 1, z);
         } else if (biome === BIOME.SNOW) {
-          if (r > 0.90) this.placeTree(chunk, x, h + 1, z, BLOCK.BIRCH_WOOD, BLOCK.BIRCH_LEAVES);
+          if (r > 0.85) this.placeTree(chunk, x, h + 1, z, BLOCK.BIRCH_WOOD, BLOCK.BIRCH_LEAVES);
         }
       }
     }
