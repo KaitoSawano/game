@@ -1,6 +1,6 @@
 import { Chunk } from './chunk.js';
 
-// Simple noise (value noise) — cukup untuk terrain
+// Simple hash & value noise — cukup untuk terrain
 function hash(x, z) {
   let h = x * 374761393 + z * 668265263;
   h = (h ^ (h >> 13)) * 1274126177;
@@ -48,7 +48,6 @@ export class World {
   constructor(seed = 12345) {
     this.seed = seed;
     this.chunks = new Map();
-    this.trees = new Map(); // pohon yang sudah di-generate
   }
 
   key(cx, cz) { return `${cx},${cz}`; }
@@ -72,23 +71,16 @@ export class World {
     return this.getChunk(cx, cz).get(lx, gy, lz);
   }
 
-  // Tinggi permukaan tanah di koordinat global
   heightAt(gx, gz) {
     const sx = (gx + this.seed) * 0.01;
     const sz = (gz + this.seed) * 0.01;
     const base = fbm(sx, sz);
-    // Pegunungan: noise kedua, lebih jarang
     const mountain = fbm(sx * 0.3 + 100, sz * 0.3 + 100);
     let h = 6 + base * 10;
     if (mountain > 0.65) {
       h += (mountain - 0.65) * 60;
     }
     return Math.floor(h);
-  }
-
-  // Apakah di posisi ini ada air (danau/laut)
-  isWater(gx, gz) {
-    return this.heightAt(gx, gz) < 8;
   }
 
   generate(cx, cz, chunk) {
@@ -102,6 +94,7 @@ export class World {
           let block;
           if (y === h) {
             if (h < 8) block = BLOCK.SAND;
+            else if (h > 20) block = BLOCK.STONE;
             else block = BLOCK.GRASS;
           } else if (y > h - 4) {
             block = BLOCK.DIRT;
@@ -111,7 +104,6 @@ export class World {
           chunk.set(x, y, z, block);
         }
 
-        // Isi air sampai y=7 kalau permukaan di bawah 8
         if (h < 7) {
           for (let y = h + 1; y <= 7; y++) {
             chunk.set(x, y, z, BLOCK.WATER);
@@ -120,14 +112,14 @@ export class World {
       }
     }
 
-    // Pohon: deterministik per koordinat
-    for (let x = 2; x < 14; x++) {
-      for (let z = 2; z < 14; z++) {
+    // Pohon hanya di area dalam chunk, dan hanya di rumput
+    for (let x = 3; x < 13; x++) {
+      for (let z = 3; z < 13; z++) {
         const gx = cx * 16 + x;
         const gz = cz * 16 + z;
         const h = this.heightAt(gx, gz);
-        if (h < 8) continue; // tidak ada pohon di air
-        if (hash(gx * 7, gz * 13) < 0.98) continue; // 2% chance
+        if (h < 9 || h > 20) continue;
+        if (hash(gx * 7, gz * 13) < 0.985) continue;
         this.placeTree(chunk, x, h + 1, z);
       }
     }
@@ -139,7 +131,6 @@ export class World {
       if (y + i < CHUNK_H) chunk.set(x, y + i, z, BLOCK.WOOD);
     }
     const topY = y + trunkH;
-    // Daun 5x5x3
     for (let dx = -2; dx <= 2; dx++) {
       for (let dz = -2; dz <= 2; dz++) {
         for (let dy = -1; dy <= 1; dy++) {
